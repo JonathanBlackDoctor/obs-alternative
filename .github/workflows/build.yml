@@ -20,6 +20,8 @@ jobs:
         run: dotnet build src/SilentStream.Core/SilentStream.Core.csproj -c Release --no-restore
       - name: Test
         run: dotnet test tests/SilentStream.Tests/SilentStream.Tests.csproj -c Release
+      - name: Compile Windows media project (cross-targeting)
+        run: dotnet build src/SilentStream.Media.Windows/SilentStream.Media.Windows.csproj -c Release
 
   # Full solution (incl. the WPF host) builds only on Windows.
   full-windows:

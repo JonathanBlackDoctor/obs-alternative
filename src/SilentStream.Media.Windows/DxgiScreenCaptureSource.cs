@@ -29,7 +29,7 @@ public sealed class DxgiScreenCaptureSource : IScreenCaptureSource
     // Last known cursor shape, drawn manually: Desktop Duplication does not composite it.
     private byte[]? _cursorShape;
     private OutputDuplicatePointerShapeInformation _cursorInfo;
-    private SharpDX.Point _cursorPosition;
+    private SharpDX.Mathematics.Interop.RawPoint _cursorPosition;
     private bool _cursorVisible;
 
     public DxgiScreenCaptureSource(ILogService log) => _log = log;

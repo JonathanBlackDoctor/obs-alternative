@@ -9,6 +9,9 @@
     <RootNamespace>SilentStream.App</RootNamespace>
     <AssemblyName>SilentStream</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Allows compiling (not running) on Linux when the SDK ships WindowsDesktop
+         (official MS SDK; Ubuntu's apt SDK cannot build WPF). -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
   <ItemGroup>

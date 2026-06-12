@@ -7,6 +7,8 @@
     <RootNamespace>SilentStream.Media.Windows</RootNamespace>
     <!-- Pointer access for the DXGI cursor-shape buffer. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Allows compiling (not running) this project on Linux dev boxes/CI. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
   <ItemGroup>
