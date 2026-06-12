@@ -17,7 +17,7 @@
 |---|---|---|---|
 | 0 | 합의·스캐폴딩(인터페이스 고정) | Infra | ✅ |
 | 1 | 설정·로그 인프라 | Infra | ✅ |
-| 2 | 미디어 파이프라인(캡처/오디오/인코딩/tee+녹화) | Media | ⬜ |
+| 2 | 미디어 파이프라인(캡처/오디오/인코딩/tee+녹화) | Media | 🟡 (코드 완료·Core 검증, 캡처/오디오는 Windows 검증 필요) |
 | 3 | YouTube OAuth/Live | YouTube | ⬜ |
 | 4 | 9px 박스/단축키/제어 UI | UI | ⬜ |
 | 5 | 자동시작/재시도/종료 처리 | Infra·Media | ⬜ |
@@ -83,12 +83,12 @@ NLog(180일 아카이브), 단일 인스턴스 Mutex 를 구현하고 단위 테
 각 단계 AC를 보고하고, RTMP 차단 시 녹화 지속 여부를 반드시 검증 항목으로 남겨.
 ```
 **AC 체크리스트**
-- [ ] 주 모니터 프레임 30fps 획득(커서 포함)
-- [ ] 시스템+마이크 믹싱, 독립 볼륨 반영
-- [ ] GPU 자동 선택(폴백 포함) 검증
-- [ ] tee로 RTMP+mp4 동시 출력
-- [ ] **RTMP 차단 시 mp4 녹화 계속**(onfail=ignore)
-- [ ] 세션 파일명/용량 한도/7일 정리 동작
+- [ ] 주 모니터 프레임 30fps 획득(커서 포함) — DXGI 구현 완료(`DxgiScreenCaptureSource`), **로컬 Windows 검증 필요**
+- [ ] 시스템+마이크 믹싱, 독립 볼륨 반영 — WASAPI 구현 완료(`WasapiAudioMixer`), **로컬 Windows 검증 필요**
+- [x] GPU 자동 선택(폴백 포함) 검증 — 우선순위/폴백 단위 테스트 + 실 ffmpeg 통합 테스트 통과
+- [x] tee로 RTMP+mp4 동시 출력 — 인자 빌더 테스트 + 실 ffmpeg(Linux)로 형식 검증. `-flags +global_header` 누락 시 mp4가 깨지는 버그를 검증 중 발견·수정
+- [x] **RTMP 차단 시 mp4 녹화 계속**(onfail=ignore) — 실 ffmpeg로 RTMP 연결 거부 상태에서 mp4 정상 생성·재생 확인 ("continuing with 1/2 slaves")
+- [x] 세션 파일명/용량 한도/7일 정리 동작 — RecordingManager 단위 테스트 7종 통과(보존/용량/디스크 부족/현재 파일 보호/part 접미사)
 
 ## Phase 3 — YouTube 연동
 

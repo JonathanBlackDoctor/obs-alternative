@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using SilentStream.Core.Contracts;
 using SilentStream.Core.Implementations;
+using SilentStream.Core.Media;
 
 namespace SilentStream.Core.DependencyInjection;
 
@@ -20,6 +21,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ILogService, LogService>();
         services.AddSingleton<ITokenProtector, DpapiTokenProtector>();
         services.AddSingleton<IConfigStore, ConfigStore>();
+        services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<IScreenCaptureSource, ScreenCaptureSource>();
         services.AddSingleton<IAudioMixer, AudioMixer>();
         services.AddSingleton<IEncoderPipeline, EncoderPipeline>();

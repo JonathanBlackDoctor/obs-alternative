@@ -39,14 +39,20 @@ public sealed record AudioDeviceInfo(string Id, string Name);
 /// fans the encoded stream out to RTMP (onfail=ignore) and the local mp4 via FFmpeg tee.
 /// See plan §3.6.
 /// </summary>
-/// <param name="RtmpUrl">Full RTMP ingest URL including the stream key.</param>
-/// <param name="RecordingFilePath">Absolute path of the session mp4 file.</param>
+/// <param name="RtmpUrl">Full RTMP ingest URL including the stream key (empty = recording only).</param>
+/// <param name="RecordingFilePath">Absolute path of the session mp4 file (empty = streaming only).</param>
 /// <param name="VideoBitrateKbps">Target video bitrate (kbps).</param>
+/// <param name="Width">Capture width in pixels.</param>
+/// <param name="Height">Capture height in pixels.</param>
+/// <param name="Fps">Capture frame rate.</param>
 /// <param name="AudioBitrateKbps">Target audio bitrate (kbps).</param>
 public sealed record EncoderStartOptions(
     string RtmpUrl,
     string RecordingFilePath,
     int VideoBitrateKbps,
+    int Width = 1920,
+    int Height = 1080,
+    double Fps = 30,
     int AudioBitrateKbps = 160);
 
 /// <summary>
