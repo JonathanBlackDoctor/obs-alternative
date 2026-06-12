@@ -9,6 +9,9 @@ namespace SilentStream.Core.Implementations;
 public sealed class ScreenCaptureSource : IScreenCaptureSource
 {
     public bool IsCapturing => false;
+    public int Width => 1920;
+    public int Height => 1080;
+    public double Fps => 30;
 
 #pragma warning disable CS0067 // part of the fixed contract; implemented in Phase 2
     public event EventHandler<VideoFrame>? FrameCaptured;

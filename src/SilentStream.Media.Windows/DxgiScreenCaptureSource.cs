@@ -38,6 +38,7 @@ public sealed class DxgiScreenCaptureSource : IScreenCaptureSource
 
     public int Width { get; private set; }
     public int Height { get; private set; }
+    public double Fps { get; private set; } = 30;
 
     public event EventHandler<VideoFrame>? FrameCaptured;
 
@@ -86,6 +87,7 @@ public sealed class DxgiScreenCaptureSource : IScreenCaptureSource
         var bounds = output.Description.DesktopBounds;
         Width = bounds.Right - bounds.Left;
         Height = bounds.Bottom - bounds.Top;
+        Fps = GetPrimaryRefreshRate();
 
         _duplication = output1.DuplicateOutput(_device);
         _stagingTexture = new Texture2D(_device, new Texture2DDescription
@@ -278,6 +280,59 @@ public sealed class DxgiScreenCaptureSource : IScreenCaptureSource
             }
         }
     }
+
+    /// <summary>Primary-monitor refresh rate via EnumDisplaySettings (plan §3.3: 주사율 따름).</summary>
+    private static double GetPrimaryRefreshRate()
+    {
+        var devMode = new Devmode { dmSize = (short)System.Runtime.InteropServices.Marshal.SizeOf<Devmode>() };
+        const int enumCurrentSettings = -1;
+        if (EnumDisplaySettings(null, enumCurrentSettings, ref devMode) && devMode.dmDisplayFrequency > 1)
+        {
+            return devMode.dmDisplayFrequency;
+        }
+        return 30;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential,
+        CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private struct Devmode
+    {
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string dmDeviceName;
+        public short dmSpecVersion;
+        public short dmDriverVersion;
+        public short dmSize;
+        public short dmDriverExtra;
+        public int dmFields;
+        public int dmPositionX;
+        public int dmPositionY;
+        public int dmDisplayOrientation;
+        public int dmDisplayFixedOutput;
+        public short dmColor;
+        public short dmDuplex;
+        public short dmYResolution;
+        public short dmTTOption;
+        public short dmCollate;
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string dmFormName;
+        public short dmLogPixels;
+        public int dmBitsPerPel;
+        public int dmPelsWidth;
+        public int dmPelsHeight;
+        public int dmDisplayFlags;
+        public int dmDisplayFrequency;
+        public int dmICMMethod;
+        public int dmICMIntent;
+        public int dmMediaType;
+        public int dmDitherType;
+        public int dmReserved1;
+        public int dmReserved2;
+        public int dmPanningWidth;
+        public int dmPanningHeight;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern bool EnumDisplaySettings(string? deviceName, int modeNum, ref Devmode devMode);
 
     private void ReleaseDuplication()
     {
