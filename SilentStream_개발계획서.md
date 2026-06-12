@@ -338,5 +338,5 @@ Live ──(stop/shutdown)──► Stopping → Idle
 - [x] Phase 3 YouTube OAuth/Live (실 계정·채널 검증은 로컬 Windows 필요)
 - [x] Phase 4 9px 박스/단축키/제어 UI (WPF 실행 검증은 로컬 Windows 필요)
 - [x] Phase 5 자동시작/재시도/종료 처리 (재부팅·세션 종료 E2E는 로컬 Windows 필요)
-- [ ] Phase 6 인스톨러/업데이트/E2E
-- [ ] 사용자 문서(설치·사용·문제해결) 작성
+- [x] Phase 6 인스톨러/업데이트/E2E (인스톨러 빌드·E2E 수행은 로컬 Windows 필요)
+- [x] 사용자 문서(설치·사용·문제해결) 작성 (`docs/USER_GUIDE.md`)

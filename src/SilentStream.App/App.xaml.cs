@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SilentStream.App.ControlUI;
 using SilentStream.App.Hotkeys;
 using SilentStream.App.StatusIndicator;
+using SilentStream.App.Updates;
 using SilentStream.Core;
 using SilentStream.Core.Contracts;
 using SilentStream.Core.DependencyInjection;
@@ -23,6 +24,7 @@ public partial class App : Application
     private StatusBoxWindow? _statusBox;
     private ControlWindow? _controlWindow;
     private HotkeyManager? _hotkeyManager;
+    private AppUpdateManager? _updateManager;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -63,6 +65,9 @@ public partial class App : Application
         _hotkeyManager.Register(config.Hotkey);
         viewModel.HotkeyChanged += gesture => _hotkeyManager.Register(gesture);
 
+        _updateManager = new AppUpdateManager(log);
+        _updateManager.Start();
+
         log.Info("SilentStream 시작 완료 (백그라운드 대기)");
 
         _ = StartupSequence.RunAsync(_services, this);
@@ -95,6 +100,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _updateManager?.Dispose();
         _hotkeyManager?.Dispose();
         LogConfigurator.Flush();
         _services?.Dispose();
