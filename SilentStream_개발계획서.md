@@ -335,7 +335,7 @@ Live ──(stop/shutdown)──► Stopping → Idle
 - [x] Phase 0 인터페이스 고정 & 빌드
 - [x] Phase 1 Config/Log/단일인스턴스
 - [x] Phase 2 캡처/오디오/인코딩/tee+녹화 (캡처·오디오 실행 검증은 로컬 Windows 필요)
-- [ ] Phase 3 YouTube OAuth/Live
+- [x] Phase 3 YouTube OAuth/Live (실 계정·채널 검증은 로컬 Windows 필요)
 - [ ] Phase 4 9px 박스/단축키/제어 UI
 - [ ] Phase 5 자동시작/재시도/종료 처리
 - [ ] Phase 6 인스톨러/업데이트/E2E

@@ -13,6 +13,7 @@
     <PackageReference Include="NLog" Version="5.3.4" />
     <!-- Compiles everywhere; DPAPI throws PlatformNotSupportedException off-Windows. -->
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+    <PackageReference Include="Google.Apis.YouTube.v3" Version="1.75.0.4176" />
   </ItemGroup>
 
 </Project>

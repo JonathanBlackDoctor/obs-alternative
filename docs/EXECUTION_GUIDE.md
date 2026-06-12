@@ -18,7 +18,7 @@
 | 0 | 합의·스캐폴딩(인터페이스 고정) | Infra | ✅ |
 | 1 | 설정·로그 인프라 | Infra | ✅ |
 | 2 | 미디어 파이프라인(캡처/오디오/인코딩/tee+녹화) | Media | 🟡 (코드 완료·Core 검증, 캡처/오디오는 Windows 검증 필요) |
-| 3 | YouTube OAuth/Live | YouTube | ⬜ |
+| 3 | YouTube OAuth/Live | YouTube | 🟡 (코드 완료, 실 계정 검증 필요) |
 | 4 | 9px 박스/단축키/제어 UI | UI | ⬜ |
 | 5 | 자동시작/재시도/종료 처리 | Infra·Media | ⬜ |
 | 6 | 인스톨러/업데이트/E2E | Packaging | ⬜ |
@@ -101,9 +101,9 @@ NLog(180일 아카이브), 단일 인스턴스 Mutex 를 구현하고 단위 테
 OAuth Client ID/Secret 위치는 CLAUDE.local.md 를 참고하라고 안내만 하고 커밋하지 마.
 ```
 **AC 체크리스트**
-- [ ] OAuth 로그인 + 토큰 자동 갱신
-- [ ] Unlisted 브로드캐스트 생성 → streamKey 송출
-- [ ] 종료 시 complete 전이
+- [ ] OAuth 로그인 + 토큰 자동 갱신 — 구현 완료(설치형 흐름 + DPAPI 암호화 토큰 저장소, 저장소 로직은 단위 테스트 통과). **실 Google 계정으로 로컬 Windows 검증 필요** (`%AppData%\SilentStream\client_secret.json` 준비)
+- [ ] Unlisted 브로드캐스트 생성 → streamKey 송출 — 구현 완료(insert+bind, 제목 템플릿 테스트 통과). **실 채널 검증 필요**
+- [ ] 종료 시 complete 전이 — 구현 완료(실패 시 다음 부팅에 새로 생성). **실 채널 검증 필요**
 
 ## Phase 4 — 표시기·단축키·제어 UI (Phase 2/3와 병렬 가능)
 
