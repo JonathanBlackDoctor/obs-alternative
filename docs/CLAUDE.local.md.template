@@ -1,0 +1,27 @@
+# CLAUDE.local.md (템플릿)
+
+> 사용법: 이 파일을 리포 루트에 `CLAUDE.local.md` 로 복사한 뒤 로컬 환경에 맞게 채우세요.
+> `CLAUDE.local.md` 는 `.gitignore` 에 의해 커밋되지 않으며, **본인 로컬 환경에만** 적용됩니다.
+> (클라우드 일회용 컨테이너에서는 세션 종료 시 사라지므로, 영구 PC에서 만들어 두세요.)
+
+## 로컬 개발 환경
+
+- OS: Windows 11 (빌드/실행은 반드시 Windows에서)
+- .NET 8 SDK 경로:
+- FFmpeg 바이너리 경로(번들 배치 위치):
+- 기본 녹화 폴더(테스트용):
+
+## YouTube / Google Cloud (시크릿은 여기 적지 말 것)
+
+- Google Cloud 프로젝트명/ID:
+- OAuth 클라이언트(데스크톱 앱) 자격증명 파일 위치(예: `client_secret.json` — 커밋 금지):
+- 테스트 채널 / 라이브 스트리밍 활성화 여부:
+
+## 로컬 실행 메모
+
+- Phase 단위로 끊어서 진행한다(`docs/EXECUTION_GUIDE.md` 참고).
+- 실행 검증이 필요한 AC는 이 Windows PC에서 직접 빌드/실행해 확인한다.
+- 자주 쓰는 명령:
+  - 빌드: `dotnet build`
+  - 실행: `dotnet run --project src/SilentStream`
+  - 로컬 RTMP 더미 서버(송출 테스트):
