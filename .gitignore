@@ -1,0 +1,37 @@
+# ---- Claude local-only (커밋 금지) ----
+CLAUDE.local.md
+
+# ---- 민감정보 / 런타임 산출물 ----
+config.json
+*.token
+secrets.*
+appsettings.*.local.json
+
+# 녹화 파일 / 로그 (런타임 생성물)
+*.mp4
+*.flv
+*.log
+recordings/
+logs/
+
+# ---- .NET / Visual Studio ----
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.userprefs
+artifacts/
+[Dd]ebug/
+[Rr]elease/
+[Bb]in/
+[Oo]bj/
+
+# 번들 바이너리 (용량 큼, 빌드시 배치)
+ffmpeg/*.exe
+*.dll.bak
+
+# ---- OS ----
+Thumbs.db
+desktop.ini
+.DS_Store
