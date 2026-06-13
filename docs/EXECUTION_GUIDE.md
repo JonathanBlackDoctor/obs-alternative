@@ -15,15 +15,24 @@
 
 | Phase | 내용 | 담당 에이전트 | 상태 |
 |---|---|---|---|
-| 0 | 합의·스캐폴딩(인터페이스 고정) | Infra | ✅ |
-| 1 | 설정·로그 인프라 | Infra | ✅ |
-| 2 | 미디어 파이프라인(캡처/오디오/인코딩/tee+녹화) | Media | 🟡 (코드 완료·Core 검증, 캡처/오디오는 Windows 검증 필요) |
-| 3 | YouTube OAuth/Live | YouTube | 🟡 (코드 완료, 실 계정 검증 필요) |
-| 4 | 9px 박스/단축키/제어 UI | UI | 🟡 (코드 완료, WPF 실행 검증 필요) |
-| 5 | 자동시작/재시도/종료 처리 | Infra·Media | 🟡 (상태머신·재시도 Linux 검증, 재부팅 E2E는 Windows 필요) |
-| 6 | 인스톨러/업데이트/E2E | Packaging | 🟡 (스크립트·코드 완료, 빌드·E2E는 Windows 필요) |
+| 0 | 합의·스캐폴딩(인터페이스 고정) | Infra | ✅ (WPF 앱 빌드까지 Windows 검증) |
+| 1 | 설정·로그 인프라 | Infra | ✅ (DPAPI 암복호화 Windows 실검증) |
+| 2 | 미디어 파이프라인(캡처/오디오/인코딩/tee+녹화) | Media | ✅ (캡처 2560×1440@75fps·시스템오디오·NVENC tee·RTMP차단독립 Windows 검증 / 마이크 믹싱은 입력장치 부재로 미검증) |
+| 3 | YouTube OAuth/Live | YouTube | 🟡 (코드·graceful 실패경로 검증, 실 Google 계정 송출 검증 필요) |
+| 4 | 9px 박스/단축키/제어 UI | UI | 🟡 (빌드·창 생성·전역 단축키·캡처/오디오 실행 검증, 9px 색상·제어창 렌더 육안 확인 잔여) |
+| 5 | 자동시작/재시도/종료 처리 | Infra·Media | 🟡 (자동시작 레지스트리·30초 warmup·지수 백오프·**녹화 독립 시작**·mp4 정상 마감 검증, 재부팅 E2E는 Windows 필요) |
+| 6 | 인스톨러/업데이트/E2E | Packaging | 🟡 (인스톨러 `.exe` 빌드 성공, 클린설치/재부팅 E2E·Squirrel 피드 URL 필요) |
 
 > 상태: ⬜ 대기 / 🟡 진행 / ✅ 완료(AC 통과)
+
+### 로컬 Windows 검증 결과 (2026-06-13)
+> 환경: Windows 11, .NET 8 SDK 8.0.422, FFmpeg 8.1, NVIDIA RTX 4070(NVENC)+Intel UHD 770(QSV).
+- **빌드**: 전체 솔루션(WPF 앱 포함) 0 에러. WPF SDK가 `System.IO` implicit using을 제외해 앱 빌드가 깨지던 버그 수정(`using System.IO;` 추가).
+- **테스트**: 75/75 통과(DPAPI 암복호화·실 ffmpeg GPU감지 포함).
+- **미디어**: GPU 자동감지 → `h264_nvenc`. 실 NVENC tee로 RTMP(죽은 포트) 차단 시 `continuing with 1/2 slaves` + mp4 정상 생성·재생.
+- **앱 실행**: DXGI 주 모니터 2560×1440@75fps 캡처, WASAPI(마이크 없음→시스템오디오 폴백), 전역 단축키 등록, 자동시작 레지스트리 기록, 백오프 1→2→4→8→16→32→60초.
+- **녹화 독립성 수정·검증**: 부팅 시 YouTube 연결 안 되면 녹화도 안 되던 갭(§4.1) 수정. 오프라인 실행 시 recording-only 인코더가 떠서 `SilentStream_REC_*.mp4`(h264 2560×1440@75fps+aac, 36초, 재생가능) 실제 생성, 앱 종료 시 stdin EOF로 정상 마감.
+- **인스톨러**: ISCC로 `installer/output/SilentStream-Setup-0.1.0.exe`(60.9MB, FFmpeg 번들) 빌드.
 
 ---
 
@@ -83,8 +92,8 @@ NLog(180일 아카이브), 단일 인스턴스 Mutex 를 구현하고 단위 테
 각 단계 AC를 보고하고, RTMP 차단 시 녹화 지속 여부를 반드시 검증 항목으로 남겨.
 ```
 **AC 체크리스트**
-- [ ] 주 모니터 프레임 30fps 획득(커서 포함) — DXGI 구현 완료(`DxgiScreenCaptureSource`), **로컬 Windows 검증 필요**
-- [ ] 시스템+마이크 믹싱, 독립 볼륨 반영 — WASAPI 구현 완료(`WasapiAudioMixer`), **로컬 Windows 검증 필요**
+- [x] 주 모니터 프레임 획득(커서 포함) — DXGI 실행 검증 완료(2026-06-13: 주 모니터 2560×1440@75fps, `DxgiScreenCaptureSource`)
+- [x] 시스템 오디오 믹싱 — WASAPI 실행 검증 완료(시스템 루프백, `WasapiAudioMixer`). **마이크 믹싱/독립 볼륨**은 이 PC에 입력 장치가 없어 미검증(미연결 시 시스템 오디오만으로 폴백되는 경로는 로그로 확인)
 - [x] GPU 자동 선택(폴백 포함) 검증 — 우선순위/폴백 단위 테스트 + 실 ffmpeg 통합 테스트 통과
 - [x] tee로 RTMP+mp4 동시 출력 — 인자 빌더 테스트 + 실 ffmpeg(Linux)로 형식 검증. `-flags +global_header` 누락 시 mp4가 깨지는 버그를 검증 중 발견·수정
 - [x] **RTMP 차단 시 mp4 녹화 계속**(onfail=ignore) — 실 ffmpeg로 RTMP 연결 거부 상태에서 mp4 정상 생성·재생 확인 ("continuing with 1/2 slaves")
@@ -136,7 +145,8 @@ mp4 정상 마감 → 브로드캐스트 complete)를 구현해.
 **AC 체크리스트**
 - [ ] 재부팅 시 자동 송출+녹화 시작 — AutoStartManager(레지스트리 Run / 작업 스케줄러 최고 권한) + 단일 인스턴스 + 30초 워밍업 구현. **재부팅 E2E는 로컬 Windows 검증 필요**
 - [x] 네트워크 차단/복구 시 자동 재연결 — 지수 백오프(1→2→…→60초 캡) 무한 재시도 + 인코더 워치독, 상태머신 단위 테스트 통과(재시도 3회 후 Live, 인코더 사망 후 자동 재기동). **녹화 무중단**은 tee `onfail=ignore`로 Phase 2에서 실 ffmpeg 검증 완료
-- [ ] 종료 시 mp4 정상 마감 + complete 전이 — SessionEnding 후킹 + Stop 시퀀스(인코더 EOF → complete 전이) 구현, Stop 순서는 단위 테스트 통과. **실제 PC 종료 검증은 로컬 Windows 필요**
+- [~] 종료 시 mp4 정상 마감 + complete 전이 — SessionEnding 후킹 + Stop 시퀀스(인코더 EOF → complete 전이) 구현, Stop 순서 단위 테스트 통과. **mp4 마감은 검증**(2026-06-13: 앱 종료 시 stdin EOF로 ffmpeg가 frag mp4를 정상 마감·재생 확인). complete 전이는 실 채널 필요, **실제 OS 종료(SessionEnding) E2E는 로컬 Windows 필요**
+- 참고(2026-06-13 수정): **녹화 독립 시작** — 부팅 시 YouTube 미연결이어도 recording-only 인코더로 녹화 시작, 연결되면 tee 전환. 단위 테스트 + 오프라인 실행 E2E로 검증(계획서 §4.1).
 
 ## Phase 6 — 패키징·업데이트·최종 테스트
 
