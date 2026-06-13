@@ -66,7 +66,7 @@ public class StreamOrchestratorTests : IDisposable
     }
 
     [Fact]
-    public async Task Failures_retry_with_backoff_until_live_and_recording_path_still_used()
+    public async Task Failed_connect_brings_up_recording_only_then_switches_to_tee_on_live()
     {
         _youtube.FailuresBeforeSuccess = 3;
         var orchestrator = CreateOrchestrator();
@@ -79,7 +79,37 @@ public class StreamOrchestratorTests : IDisposable
             Assert.Equal(3, _states.Count(s => s == StreamState.Retrying));
         }
         Assert.Equal(4, _youtube.CreateCalls);
-        Assert.Single(_encoder.StartCalls); // encoder only starts on the successful attempt
+
+        // §3.6/§4.1: after the first failed connect the encoder comes up recording-only
+        // (no RTMP), then switches to the RTMP+mp4 tee once streaming finally goes live.
+        Assert.Equal(2, _encoder.StartCalls.Count);
+        Assert.Equal(string.Empty, _encoder.StartCalls[0].RtmpUrl);
+        Assert.EndsWith(".mp4", _encoder.StartCalls[0].RecordingFilePath);
+        Assert.Equal("rtmp://ingest.example/live2/key-4", _encoder.StartCalls[1].RtmpUrl);
+        Assert.EndsWith(".mp4", _encoder.StartCalls[1].RecordingFilePath);
+    }
+
+    [Fact]
+    public async Task Recording_starts_even_when_youtube_never_connects()
+    {
+        _youtube.FailuresBeforeSuccess = int.MaxValue; // streaming never succeeds
+        var orchestrator = CreateOrchestrator();
+        using var cts = new CancellationTokenSource();
+
+        // StartAsync never returns while connecting loops forever, so don't await it.
+        var startTask = orchestrator.StartAsync(cts.Token);
+        await WaitUntilAsync(() => _encoder.StartCalls.Count >= 1, TimeSpan.FromSeconds(5));
+
+        // The local backup recording is running despite streaming being stuck retrying.
+        var recordingOnly = Assert.Single(_encoder.StartCalls);
+        Assert.Equal(string.Empty, recordingOnly.RtmpUrl);          // recording-only: no RTMP
+        Assert.EndsWith(".mp4", recordingOnly.RecordingFilePath);   // ...but writing a file
+        Assert.True(_encoder.IsRunning);
+        Assert.NotEqual(StreamState.Live, orchestrator.State);
+
+        cts.Cancel();
+        await startTask; // StartAsync swallows the cancellation and stops cleanly
+        Assert.True(_encoder.Stopped);
     }
 
     [Fact]

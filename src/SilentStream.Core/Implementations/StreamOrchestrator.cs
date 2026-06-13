@@ -195,6 +195,7 @@ public sealed class StreamOrchestrator : IStreamOrchestrator
     {
         var delay = _options.RetryBaseDelay;
         var attempt = 0;
+        var recordingStarted = false;
 
         while (true)
         {
@@ -217,9 +218,58 @@ public sealed class StreamOrchestrator : IStreamOrchestrator
             {
                 SetState(StreamState.Retrying);
                 _log.Warn($"송출 시작 실패({ex.Message}) — {delay.TotalSeconds:F0}초 후 재시도");
+
+                // §3.6/§4.1: the local backup recording must not depend on YouTube. Once the
+                // first connect attempt fails, bring up the encoder in recording-only mode so
+                // recording keeps running while streaming retries (and even if it never
+                // connects). StartStreamingOnceAsync switches it over to the RTMP+mp4 tee once
+                // a broadcast is finally created.
+                if (!recordingStarted)
+                {
+                    recordingStarted = await StartRecordingOnlyAsync(ct).ConfigureAwait(false);
+                }
+
                 await Task.Delay(delay, ct).ConfigureAwait(false);
                 delay = TimeSpan.FromTicks(Math.Min(delay.Ticks * 2, _options.RetryMaxDelay.Ticks));
             }
+        }
+    }
+
+    /// <summary>
+    /// Brings the encoder up in recording-only mode (no RTMP) so the local backup survives
+    /// YouTube being unreachable at boot (plan §3.6/§4.1). Best-effort: a recording failure
+    /// must not stop streaming retries. Returns true once recording is settled — running,
+    /// already running, or intentionally disabled — and false only on a transient start
+    /// failure that should be retried on the next connect attempt.
+    /// </summary>
+    private async Task<bool> StartRecordingOnlyAsync(CancellationToken ct)
+    {
+        if (_encoder.IsRunning)
+        {
+            return true;
+        }
+        if (!_configStore.Load().Recording.Enabled)
+        {
+            return true; // recording disabled — nothing to bring up.
+        }
+
+        try
+        {
+            var recordingPath = _recording.CreateSessionFilePath(_sessionStart);
+            await _encoder.StartAsync(new EncoderStartOptions(
+                RtmpUrl: string.Empty,
+                RecordingFilePath: recordingPath,
+                VideoBitrateKbps: BitrateMapper.GetVideoBitrateKbps(_capture.Height, _capture.Fps),
+                Width: _capture.Width,
+                Height: _capture.Height,
+                Fps: _capture.Fps), ct).ConfigureAwait(false);
+            _log.Info("로컬 백업 녹화를 시작했습니다 (송출 연결과 독립).");
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _log.Error("로컬 녹화 시작 실패 — 송출 재시도는 계속합니다.", ex);
+            return false;
         }
     }
 
