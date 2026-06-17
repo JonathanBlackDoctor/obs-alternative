@@ -16,6 +16,12 @@ public static class AppPaths
     /// <summary>OAuth client credentials file (never committed — see docs/CLAUDE.local.md.template).</summary>
     public static string ClientSecretFile => Path.Combine(AppDataDir, "client_secret.json");
 
+    /// <summary>Scratch folder for per-period VOD cuts awaiting upload (확장계획서 §4.1).</summary>
+    public static string VodDir => Path.Combine(AppDataDir, "vod");
+
+    /// <summary>Persistent, quota-aware upload queue (확장계획서 §4.2). Not sensitive.</summary>
+    public static string UploadQueueFile => Path.Combine(AppDataDir, "upload_queue.json");
+
     public static string DefaultRecordingFolder
     {
         get

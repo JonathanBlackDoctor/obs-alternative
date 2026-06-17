@@ -73,6 +73,15 @@ public sealed class ConfigStore : IConfigStore
         {
             config.Recording.Folder = AppPaths.DefaultRecordingFolder;
         }
+
+        // v2 migration (확장계획서 §6): a v1 file omits these sections, leaving the C#
+        // initializers in place — but an explicit JSON null would null them, so guard.
+        config.Periods ??= new PeriodsConfig();
+        config.Remote ??= new RemoteConfig();
+        if (config.Version < 2)
+        {
+            config.Version = 2;
+        }
         return config;
     }
 }

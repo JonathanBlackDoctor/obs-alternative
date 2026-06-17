@@ -39,12 +39,20 @@ Name: "{group}\{#MyAppName} 제어판"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\{#MyAppName} 제거"; Filename: "{uninstallexe}"
 
 [Run]
+; 폰 원격 제어(LAN)를 선택하면 Windows 방화벽 인바운드 규칙을 추가(확장계획서 §4.4/E5).
+; 관리자 권한이 없으면 실패할 수 있으나 앱 실행 시 런타임에서도 best-effort 로 재시도한다.
+Filename: "netsh"; \
+    Parameters: "advfirewall firewall add rule name=""SilentStream Remote 8787"" dir=in action=allow protocol=TCP localport=8787"; \
+    Flags: runhidden; Check: RemoteEnabled
 Filename: "{app}\{#MyAppExeName}"; Description: "지금 SilentStream 시작"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 ; 작업 스케줄러 자동 시작 해제 (등록돼 있을 때만)
 Filename: "schtasks.exe"; Parameters: "/Delete /TN ""SilentStream AutoStart"" /F"; \
     Flags: runhidden skipifdoesntexist; RunOnceId: "RemoveSchedTask"
+; 원격 제어 방화벽 규칙 제거 (있을 때만)
+Filename: "netsh"; Parameters: "advfirewall firewall delete rule name=""SilentStream Remote 8787"""; \
+    Flags: runhidden skipifdoesntexist; RunOnceId: "RemoveRemoteFwRule"
 
 [Registry]
 ; 시작 프로그램 자동 시작 해제 (제거 시 값 삭제)
@@ -59,6 +67,13 @@ Type: filesandordirs; Name: "{userappdata}\SilentStream\logs"
 var
   AutoStartPage: TInputOptionWizardPage;
   RecordingDirPage: TInputDirWizardPage;
+  RemotePage: TInputOptionWizardPage;
+
+{ 폰 원격 제어(LAN) 사용 여부 — [Run] Check 및 config 작성에 사용 }
+function RemoteEnabled: Boolean;
+begin
+  Result := RemotePage.Values[0];
+end;
 
 procedure InitializeWizard;
 begin
@@ -77,6 +92,14 @@ begin
     False, '');
   RecordingDirPage.Add('');
   RecordingDirPage.Values[0] := ExpandConstant('{userdocs}\..\Videos\SilentStream');
+
+  { 폰 원격 제어 사용 여부 (확장계획서 §4.4 / E5) }
+  RemotePage := CreateInputOptionPage(RecordingDirPage.ID,
+    '폰 원격 제어', '스마트폰으로 시간표·라이브를 원격 제어할까요?',
+    '같은 와이파이의 폰 브라우저로 접속해 교시 시간표 입력과 라이브 시작/중지가 가능합니다.' + #13#10 +
+    '(포트 8787 인바운드 허용 / 설치 후 제어판·설정에서 변경 가능)', False, False);
+  RemotePage.Add('폰 원격 제어 사용 (LAN, 같은 와이파이)');
+  RemotePage.Values[0] := False;
 end;
 
 function JsonEscape(const S: string): string;
@@ -97,7 +120,7 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  ConfigDir, ConfigFile, Autostart, Json: string;
+  ConfigDir, ConfigFile, Autostart, RemoteMode, Json: string;
 begin
   if CurStep = ssPostInstall then
   begin
@@ -111,12 +134,17 @@ begin
         Autostart := 'scheduler'
       else
         Autostart := 'startup';
+      if RemoteEnabled then
+        RemoteMode := 'lan'
+      else
+        RemoteMode := 'off';
       Json :=
         '{' + #13#10 +
-        '  "version": 1,' + #13#10 +
+        '  "version": 2,' + #13#10 +
         '  "recording": { "enabled": true, "folder": "' +
              JsonEscape(RecordingDirPage.Values[0]) + '",' + #13#10 +
         '                 "maxSizeGb": 100, "retentionDays": 7, "minFreeGb": 5 },' + #13#10 +
+        '  "remote": { "mode": "' + RemoteMode + '", "port": 8787, "deviceTokens": [] },' + #13#10 +
         '  "autostart": "' + Autostart + '"' + #13#10 +
         '}' + #13#10;
       SaveStringToFile(ConfigFile, Json, False);

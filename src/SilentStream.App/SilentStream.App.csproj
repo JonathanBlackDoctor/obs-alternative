@@ -22,6 +22,17 @@
     <PackageReference Include="Clowd.Squirrel" Version="2.11.1" />
   </ItemGroup>
 
+  <!-- 임베디드 원격 제어 웹서버(Kestrel) — 확장계획서 §4.4/§10. 프레임워크 종속 배포 시
+       대상 PC에 ASP.NET Core 8 런타임이 필요(설치 안내는 docs/USER_GUIDE.md). -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- 모바일 원격 제어 웹 UI는 어셈블리에 임베드(별도 정적 파일 배포 불필요). -->
+  <ItemGroup>
+    <EmbeddedResource Include="Remote\index.html" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\SilentStream.Core\SilentStream.Core.csproj" />
     <ProjectReference Include="..\SilentStream.Media.Windows\SilentStream.Media.Windows.csproj" />

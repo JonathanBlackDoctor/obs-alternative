@@ -9,7 +9,7 @@ namespace SilentStream.Core.Implementations;
 /// oldest-first deletion, a 7-day retention window, and a min-free-space threshold.
 /// The actual bytes are written by the encoder's tee output; this class only manages files.
 /// </summary>
-public sealed class RecordingManager : IRecordingManager
+public sealed class RecordingManager : IRecordingManager, IRecordingSessionInfo
 {
     private const string FilePrefix = "SilentStream_REC_";
     private const string FilePattern = FilePrefix + "*.mp4";
@@ -20,6 +20,7 @@ public sealed class RecordingManager : IRecordingManager
     private readonly Func<string, long> _freeBytesProvider;
 
     private string? _currentFilePath;
+    private DateTime _currentSessionStart;
 
     public RecordingManager(IConfigStore configStore, ILogService log)
         : this(configStore, log, () => DateTime.Now, GetFreeBytes)
@@ -54,8 +55,16 @@ public sealed class RecordingManager : IRecordingManager
         }
 
         _currentFilePath = path;
+        _currentSessionStart = sessionStartLocal;
         return path;
     }
+
+    /// <summary>
+    /// Current recording session for the VOD cut (확장계획서 §4.1). StartLocal is the value
+    /// passed to <see cref="CreateSessionFilePath"/> for the active file, i.e. file offset 0.
+    /// </summary>
+    public RecordingSession? Current =>
+        _currentFilePath is null ? null : new RecordingSession(_currentFilePath, _currentSessionStart);
 
     public RecordingStatus GetStatus()
     {

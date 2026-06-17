@@ -16,7 +16,7 @@ public class ConfigStoreTests : IDisposable
         var store = new ConfigStore(ConfigPath);
         var config = store.Load();
 
-        Assert.Equal(1, config.Version);
+        Assert.Equal(2, config.Version); // schema v2 (확장계획서 §6: periods + remote)
         Assert.False(string.IsNullOrWhiteSpace(config.Recording.Folder));
         Assert.Equal("Ctrl+Shift+F12", config.Hotkey);
     }
@@ -78,7 +78,7 @@ public class ConfigStoreTests : IDisposable
 
         var config = store.Load();
 
-        Assert.Equal(1, config.Version);
+        Assert.Equal(2, config.Version); // defaults are schema v2
         Assert.True(File.Exists(ConfigPath + ".bak"));
     }
 

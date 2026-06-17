@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <title>SilentStream 원격</title>
+  <style>
+    :root { --bg:#15171c; --card:#1f232b; --line:#2c313b; --fg:#e6e8ec; --muted:#8b929e;
+            --accent:#3a86ff; --green:#2ecc40; --yellow:#f1c40f; --red:#e74c3c; }
+    * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;
+           padding:max(12px,env(safe-area-inset-top)) 12px calc(12px+env(safe-area-inset-bottom)); }
+    h1 { font-size:18px; margin:4px 0 14px; display:flex; align-items:center; gap:8px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px; }
+    .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 10px; }
+    .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-weight:600; font-size:13px; }
+    .row { display:flex; justify-content:space-between; gap:8px; padding:3px 0; }
+    .row .k { color:var(--muted); }
+    button { font:inherit; font-weight:600; border:none; border-radius:10px; padding:12px 16px; color:#fff;
+             background:var(--accent); width:100%; margin-top:6px; cursor:pointer; }
+    button.stop { background:var(--red); } button.ghost { background:#333a46; }
+    button:disabled { opacity:.45; }
+    .btnrow { display:flex; gap:8px; } .btnrow button { margin-top:0; }
+    input { font:inherit; background:#12141a; border:1px solid var(--line); color:var(--fg);
+            border-radius:8px; padding:9px; width:100%; }
+    input.time { width:100%; text-align:center; }
+    table { width:100%; border-collapse:collapse; } td,th { padding:5px 4px; text-align:center; font-size:14px; }
+    th { color:var(--muted); font-weight:500; font-size:12px; }
+    .tabs { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:10px; }
+    .tabs button { width:auto; flex:1 1 13%; padding:8px 0; margin:0; background:#262b34; font-size:13px; }
+    .tabs button.active { background:var(--accent); }
+    .pin { font-size:28px; letter-spacing:.4em; text-align:center; }
+    .muted { color:var(--muted); font-size:13px; }
+    .qitem { display:flex; justify-content:space-between; border-bottom:1px solid var(--line); padding:6px 0; font-size:14px; }
+    .pill { font-size:11px; padding:2px 8px; border-radius:10px; background:#333a46; }
+    .pill.done { background:#1d4d27; } .pill.pending { background:#5a4a12; } .pill.failed { background:#5a2020; }
+    .x { color:var(--red); background:none; width:auto; padding:4px 8px; margin:0; font-size:18px; }
+    .hidden { display:none; }
+    #toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#333a46;
+             padding:10px 16px; border-radius:8px; opacity:0; transition:opacity .3s; pointer-events:none; }
+    #toast.show { opacity:1; }
+  </style>
+</head>
+<body>
+  <h1>📡 SilentStream 원격</h1>
+
+  <!-- 페어링 화면 -->
+  <section id="pair" class="hidden">
+    <div class="card">
+      <h2>기기 연결</h2>
+      <p class="muted">PC 화면(제어창)에 표시된 6자리 PIN을 입력하세요.</p>
+      <input id="pinInput" inputmode="numeric" maxlength="6" placeholder="● ● ● ● ● ●" class="pin" />
+      <button id="pairBtn">연결</button>
+    </div>
+  </section>
+
+  <!-- 대시보드 -->
+  <section id="dash" class="hidden">
+    <div class="card">
+      <h2>상태</h2>
+      <div class="row"><span class="k">송출</span><span id="badge" class="badge">-</span></div>
+      <div class="row"><span class="k">업로드</span><span id="bitrate">- kbps</span></div>
+      <div class="row"><span class="k">FPS</span><span id="fps">-</span></div>
+      <div class="row"><span class="k">CPU / GPU</span><span id="cpugpu">- / -</span></div>
+      <div class="btnrow">
+        <button id="startBtn">라이브 시작</button>
+        <button id="stopBtn" class="stop">중지</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>녹화</h2>
+      <div class="row"><span class="k">현재 파일</span><span id="recFile">-</span></div>
+      <div class="row"><span class="k">누적 용량</span><span id="recUsed">-</span></div>
+      <div class="row"><span class="k">남은 디스크</span><span id="recFree">-</span></div>
+    </div>
+
+    <div class="card">
+      <h2>오늘 시간표 <span id="todayDate" class="muted"></span></h2>
+      <div id="todayBadge" class="muted"></div>
+      <table><thead><tr><th>교시</th><th>시작</th><th>종료</th><th></th></tr></thead>
+        <tbody id="todayRows"></tbody></table>
+      <button class="ghost" id="addTodayRow">+ 교시 추가</button>
+      <div class="btnrow">
+        <button id="saveToday">오늘만 덮어쓰기</button>
+        <button id="clearToday" class="ghost">기본값으로</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>요일별 기본 시간표</h2>
+      <div class="tabs" id="weekTabs"></div>
+      <table><thead><tr><th>교시</th><th>시작</th><th>종료</th><th></th></tr></thead>
+        <tbody id="weekRows"></tbody></table>
+      <button class="ghost" id="addWeekRow">+ 교시 추가</button>
+      <button id="saveWeek">이 요일 저장</button>
+    </div>
+
+    <div class="card">
+      <h2>업로드 큐 <span id="qSummary" class="muted"></span></h2>
+      <div id="qList"></div>
+    </div>
+
+    <button class="ghost" id="unpair">이 기기 연결 해제</button>
+  </section>
+
+  <div id="toast"></div>
+
+  <script>
+    const WEEKDAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+    const WEEKDAY_KR = {Mon:"월",Tue:"화",Wed:"수",Thu:"목",Fri:"금",Sat:"토",Sun:"일"};
+    let token = localStorage.getItem("ss_token") || "";
+    let weekData = {}, activeDay = "Mon", ws = null;
+
+    const $ = id => document.getElementById(id);
+    const toast = msg => { const t=$("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1800); };
+    const fmtBytes = b => { if(!b) return "-"; const g=b/1073741824; if(g>=1) return g.toFixed(1)+" GB"; const m=b/1048576; if(m>=1) return m.toFixed(1)+" MB"; return (b/1024).toFixed(0)+" KB"; };
+
+    async function api(path, opts={}) {
+      opts.headers = Object.assign({ "Authorization":"Bearer "+token, "Content-Type":"application/json" }, opts.headers||{});
+      const r = await fetch(path, opts);
+      if (r.status === 401) { logout(); throw new Error("인증 필요"); }
+      return r;
+    }
+
+    function showPair(){ $("pair").classList.remove("hidden"); $("dash").classList.add("hidden"); }
+    function showDash(){ $("pair").classList.add("hidden"); $("dash").classList.remove("hidden"); }
+    function logout(){ token=""; localStorage.removeItem("ss_token"); if(ws) ws.close(); showPair(); }
+
+    $("pairBtn").onclick = async () => {
+      const pin = $("pinInput").value.trim();
+      const r = await fetch("/api/pair", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({pin}) });
+      if (!r.ok) { toast("PIN이 올바르지 않습니다."); return; }
+      const data = await r.json(); token = data.token; localStorage.setItem("ss_token", token);
+      toast("연결되었습니다."); start();
+    };
+    $("unpair").onclick = () => { logout(); toast("연결을 해제했습니다."); };
+
+    $("startBtn").onclick = async () => { await api("/api/live/start",{method:"POST"}); toast("라이브 시작 요청"); };
+    $("stopBtn").onclick  = async () => { await api("/api/live/stop",{method:"POST"}); toast("중지 요청"); };
+
+    function renderStatus(s){
+      const colors={Live:"--green",Warmup:"--yellow",ConnectingYouTube:"--yellow",Retrying:"--red",Stopping:"--red",Idle:"--muted"};
+      const badge=$("badge"); badge.textContent=s.badge; badge.style.background="var("+(colors[s.state]||"--muted")+")";
+      badge.style.color = (s.state==="Warmup"||s.state==="ConnectingYouTube") ? "#000" : "#fff";
+      $("bitrate").textContent = Math.round(s.metrics.bitrateKbps)+" kbps";
+      $("fps").textContent = Math.round(s.metrics.fps)+" fps";
+      $("cpugpu").textContent = Math.round(s.metrics.cpu)+"% / "+(s.metrics.gpu>=0?Math.round(s.metrics.gpu)+"%":"-");
+      $("recFile").textContent = s.recording.file || "대기 중";
+      $("recUsed").textContent = fmtBytes(s.recording.usedBytes);
+      $("recFree").textContent = fmtBytes(s.recording.freeBytes);
+      $("startBtn").disabled = s.state!=="Idle"; $("stopBtn").disabled = (s.state==="Idle"||s.state==="Stopping");
+      $("todayDate").textContent = s.today.date;
+      $("todayBadge").textContent = s.today.hasOverride ? "오늘 덮어쓰기 적용 중" : "요일 기본값 사용 중";
+      const q=s.queue;
+      $("qSummary").textContent = `대기 ${q.pending} · 업로드중 ${q.uploading} · 완료 ${q.completed} · 실패 ${q.failed}`;
+      $("qList").innerHTML = q.items.length ? q.items.slice().reverse().map(i=>{
+        const cls = i.status==="completed"?"done":i.status==="failed"?"failed":"pending";
+        const link = i.videoId ? ` <a href="https://youtu.be/${i.videoId}" target="_blank" style="color:var(--accent)">열기</a>`:"";
+        return `<div class="qitem"><span>${i.title}</span><span class="pill ${cls}">${i.status}${link}</span></div>`;
+      }).join("") : '<div class="muted">큐가 비어 있습니다.</div>';
+    }
+
+    function rowsHtml(periods){
+      return periods.map((p,idx)=>`<tr data-i="${idx}">
+        <td><input class="time" value="${p.no}" inputmode="numeric" style="width:46px" data-f="no"></td>
+        <td><input class="time" value="${p.start}" data-f="start"></td>
+        <td><input class="time" value="${p.end}" data-f="end"></td>
+        <td><button class="x" data-del="${idx}">✕</button></td></tr>`).join("");
+    }
+    function readRows(tbody){
+      return [...tbody.querySelectorAll("tr")].map(tr=>({
+        no: parseInt(tr.querySelector('[data-f=no]').value)||0,
+        start: tr.querySelector('[data-f=start]').value.trim(),
+        end: tr.querySelector('[data-f=end]').value.trim()
+      })).filter(p=>p.no>0);
+    }
+    function wireDelete(tbody){ tbody.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{ b.closest("tr").remove(); }); }
+
+    // ---- 오늘 시간표 ----
+    let todayPeriods=[];
+    function renderToday(){ $("todayRows").innerHTML=rowsHtml(todayPeriods); wireDelete($("todayRows")); }
+    $("addTodayRow").onclick=()=>{ todayPeriods=readRows($("todayRows")); todayPeriods.push({no:todayPeriods.length+1,start:"09:00:00",end:"09:50:00"}); renderToday(); };
+    $("saveToday").onclick=async()=>{ await api("/api/schedule/today",{method:"PUT",body:JSON.stringify(readRows($("todayRows")))}); toast("오늘 시간표를 저장했습니다."); };
+    $("clearToday").onclick=async()=>{ await api("/api/schedule/today",{method:"DELETE"}); toast("기본값으로 되돌렸습니다."); loadToday(); };
+    async function loadToday(){ const r=await api("/api/schedule/today"); const d=await r.json(); todayPeriods=d.periods; renderToday(); }
+
+    // ---- 요일별 기본 ----
+    function renderTabs(){
+      $("weekTabs").innerHTML=WEEKDAYS.map(d=>`<button data-d="${d}" class="${d===activeDay?'active':''}">${WEEKDAY_KR[d]}</button>`).join("");
+      $("weekTabs").querySelectorAll("button").forEach(b=>b.onclick=()=>{ weekData[activeDay]=readRows($("weekRows")); activeDay=b.dataset.d; renderTabs(); renderWeek(); });
+    }
+    function renderWeek(){ $("weekRows").innerHTML=rowsHtml(weekData[activeDay]||[]); wireDelete($("weekRows")); }
+    $("addWeekRow").onclick=()=>{ const cur=readRows($("weekRows")); cur.push({no:cur.length+1,start:"09:00:00",end:"09:50:00"}); weekData[activeDay]=cur; renderWeek(); };
+    $("saveWeek").onclick=async()=>{ weekData[activeDay]=readRows($("weekRows")); await api("/api/schedule",{method:"PUT",body:JSON.stringify({[activeDay]:weekData[activeDay]})}); toast(WEEKDAY_KR[activeDay]+"요일 시간표를 저장했습니다."); };
+    async function loadWeek(){ const r=await api("/api/schedule"); weekData=await r.json(); renderTabs(); renderWeek(); }
+
+    function connectWs(){
+      try {
+        const proto = location.protocol==="https:"?"wss":"ws";
+        ws = new WebSocket(`${proto}://${location.host}/ws/status?token=${encodeURIComponent(token)}`);
+        ws.onmessage = e => renderStatus(JSON.parse(e.data));
+        ws.onclose = () => { ws=null; setTimeout(()=>{ if(token) connectWs(); }, 4000); };
+      } catch(e){ /* fall back to polling */ }
+    }
+    async function pollOnce(){ try{ const r=await api("/api/status"); renderStatus(await r.json()); }catch(e){} }
+
+    async function start(){
+      showDash();
+      await pollOnce(); await loadToday(); await loadWeek();
+      connectWs();
+      setInterval(()=>{ if(!ws || ws.readyState!==1) pollOnce(); }, 5000);
+    }
+
+    if (token) start(); else showPair();
+  </script>
+</body>
+</html>

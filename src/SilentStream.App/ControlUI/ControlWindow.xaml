@@ -115,6 +115,13 @@
 
                         <Button Content="설정 저장" Command="{Binding SaveSettingsCommand}"
                                 Margin="0,12,0,0" />
+
+                        <Separator Margin="0,12,0,8" />
+                        <TextBlock Text="폰 원격 제어" FontWeight="Bold" />
+                        <TextBlock Text="{Binding RemoteStatusText}" TextWrapping="Wrap"
+                                   Foreground="{StaticResource DimBrush}" Margin="0,2,0,0" />
+                        <TextBlock Text="{Binding RemotePinText}" FontFamily="Consolas" FontSize="18"
+                                   Margin="0,4,0,0" />
                     </StackPanel>
                 </ScrollViewer>
             </GroupBox>

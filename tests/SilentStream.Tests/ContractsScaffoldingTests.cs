@@ -58,6 +58,29 @@ public class ContractsScaffoldingTests
         Assert.NotNull(provider.GetService<ITokenProtector>());
     }
 
+    [Theory]
+    [InlineData(typeof(IPeriodScheduleStore))]
+    [InlineData(typeof(IPeriodScheduler))]
+    [InlineData(typeof(IVodSegmentService))]
+    [InlineData(typeof(IYouTubeUploadService))]
+    [InlineData(typeof(IUploadQueue))]
+    [InlineData(typeof(IRecordingSessionInfo))]
+    public void Extension_contracts_resolve_from_the_container(Type contract)
+    {
+        // 확장(교시 VOD + 폰 원격) 신규 계약이 DI 그래프에서 정상 해석되는지 검증.
+        using var provider = BuildProvider();
+        Assert.NotNull(provider.GetService(contract));
+    }
+
+    [Fact]
+    public void Recording_manager_and_session_info_share_one_instance()
+    {
+        using var provider = BuildProvider();
+        Assert.Same(
+            provider.GetRequiredService<IRecordingManager>(),
+            provider.GetRequiredService<IRecordingSessionInfo>());
+    }
+
     [Fact]
     public void Orchestrator_starts_in_idle_state()
     {
@@ -71,7 +94,7 @@ public class ContractsScaffoldingTests
     {
         var config = AppConfig.CreateDefault();
 
-        Assert.Equal(1, config.Version);
+        Assert.Equal(2, config.Version); // schema v2 (확장계획서 §6)
         Assert.Equal("unlisted", config.YouTube.Privacy);
         Assert.Equal("auto", config.Encoding.PreferredGpu);
         Assert.True(config.Recording.Enabled);

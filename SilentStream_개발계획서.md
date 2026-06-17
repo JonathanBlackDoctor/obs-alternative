@@ -340,3 +340,5 @@ Live ──(stop/shutdown)──► Stopping → Idle
 - [x] Phase 5 자동시작/재시도/종료 처리 (자동시작 레지스트리·warmup·백오프·**녹화 독립 시작**(§4.1 갭 수정)·mp4 정상 마감 검증, **재부팅 E2E 필요**)
 - [x] Phase 6 인스톨러/업데이트/E2E (인스톨러 `.exe` 빌드 검증, **클린설치/재부팅 E2E·Squirrel 피드 URL 필요**)
 - [x] 사용자 문서(설치·사용·문제해결) 작성 (`docs/USER_GUIDE.md`)
+
+> **확장 계획(별도 문서)**: 교시 자동 분할 VOD 업로드 + 스마트폰 원격 제어는 [`SilentStream_확장계획서_교시VOD_폰원격제어.md`](./SilentStream_확장계획서_교시VOD_폰원격제어.md) 참조 (확장 Phase E1~E5, 2026-06-18 합의).

@@ -2,6 +2,7 @@ using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Win32;
 using SilentStream.Core.Contracts;
+using SilentStream.Core.Implementations;
 using SilentStream.Core.SingleInstance;
 
 namespace SilentStream.App;
@@ -17,6 +18,7 @@ public static class StartupSequence
     private static SingleInstanceGuard? _guard;
     private static IDisposable? _signalListener;
     private static CancellationTokenSource? _lifetimeCts;
+    private static IRemoteControlServer? _remoteServer;
 
     public static async Task RunAsync(IServiceProvider services, Application app)
     {
@@ -45,8 +47,45 @@ public static class StartupSequence
         app.Dispatcher.Invoke(() => app.SessionEnding += (_, _) => OnSessionEnding(orchestrator, log));
         app.Dispatcher.Invoke(() => app.Exit += (_, _) => Cleanup());
 
+        // 확장(교시 VOD + 폰 원격): 라이브와 독립적으로 스케줄러/업로드 워커/원격 서버를 먼저 기동한다.
+        // (orchestrator.StartAsync 는 YouTube 미연결 시 재시도 루프로 반환하지 않을 수 있으므로 앞에 둔다.)
+        services.GetRequiredService<VodCoordinator>().Start(_lifetimeCts.Token);
+        await StartRemoteServerAsync(services, log, _lifetimeCts.Token).ConfigureAwait(false);
+
         // 자동 송출+녹화 시작 (30초 워밍업은 orchestrator 내부).
         await orchestrator.StartAsync(_lifetimeCts.Token).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Starts the embedded remote-control server per config.remote.mode (확장계획서 §4.4). Off by
+    /// default; failures are logged but never block the live/recording path.
+    /// </summary>
+    private static async Task StartRemoteServerAsync(
+        IServiceProvider services, ILogService log, CancellationToken ct)
+    {
+        var remote = services.GetService<IRemoteControlServer>();
+        var config = services.GetRequiredService<IConfigStore>().Load().Remote;
+        if (remote is null)
+        {
+            return;
+        }
+
+        var mode = config.Mode?.ToLowerInvariant() switch
+        {
+            "lan" => RemoteBindMode.Lan,
+            "tailscale" => RemoteBindMode.Tailscale,
+            _ => RemoteBindMode.Off
+        };
+
+        try
+        {
+            await remote.StartAsync(mode, config.Port, ct).ConfigureAwait(false);
+            _remoteServer = remote;
+        }
+        catch (Exception ex)
+        {
+            log.Error("원격 제어 서버 시작 실패(라이브/녹화에는 영향 없음)", ex);
+        }
     }
 
     private static void OnSessionEnding(IStreamOrchestrator orchestrator, ILogService log)
@@ -67,6 +106,14 @@ public static class StartupSequence
 
     private static void Cleanup()
     {
+        try
+        {
+            _remoteServer?.StopAsync().Wait(TimeSpan.FromSeconds(5));
+        }
+        catch
+        {
+            // best-effort
+        }
         _signalListener?.Dispose();
         _guard?.Dispose();
         _lifetimeCts?.Dispose();

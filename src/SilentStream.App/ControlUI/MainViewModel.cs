@@ -184,6 +184,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _freeDiskText = "-";
     public string FreeDiskText { get => _freeDiskText; private set => Set(ref _freeDiskText, value); }
 
+    // ---- 폰 원격 제어 ----
+    private string _remoteStatusText = "원격 제어가 꺼져 있거나 시작 중입니다 (설정: remote.mode).";
+    public string RemoteStatusText { get => _remoteStatusText; private set => Set(ref _remoteStatusText, value); }
+
+    private string _remotePinText = "";
+    public string RemotePinText { get => _remotePinText; private set => Set(ref _remotePinText, value); }
+
+    /// <summary>Called by App when the remote server emits a fresh pairing PIN.</summary>
+    public void SetRemotePin(string pin) => OnUi(() =>
+    {
+        RemoteStatusText = "폰 브라우저로 접속 후 아래 PIN을 입력해 페어링하세요.";
+        RemotePinText = $"PIN: {pin}";
+    });
+
     // ---- 로그 뷰어 ----
     public ObservableCollection<string> LogLines { get; } = [];
 

@@ -3,6 +3,7 @@ using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using SilentStream.App.ControlUI;
 using SilentStream.App.Hotkeys;
+using SilentStream.App.Remote;
 using SilentStream.App.StatusIndicator;
 using SilentStream.App.Updates;
 using SilentStream.Core;
@@ -38,6 +39,9 @@ public partial class App : Application
         // Swap the Phase-0 stubs for the real Windows capture/audio implementations.
         collection.AddSingleton<IScreenCaptureSource, DxgiScreenCaptureSource>();
         collection.AddSingleton<IAudioMixer, WasapiAudioMixer>();
+        // 확장(폰 원격 제어): 임베디드 Kestrel 서버. 구체 타입은 제어창 PIN 표시에 사용.
+        collection.AddSingleton<RemoteControlServer>();
+        collection.AddSingleton<IRemoteControlServer>(sp => sp.GetRequiredService<RemoteControlServer>());
         collection.AddSingleton<MainViewModel>();
         _services = collection.BuildServiceProvider();
 
@@ -65,6 +69,14 @@ public partial class App : Application
         _hotkeyManager.HotkeyPressed += () => _controlWindow.Toggle();
         _hotkeyManager.Register(config.Hotkey);
         viewModel.HotkeyChanged += gesture => _hotkeyManager.Register(gesture);
+
+        // 폰 페어링 PIN을 제어창에 표시 (원격 서버는 StartupSequence에서 기동).
+        var remoteServer = _services.GetRequiredService<RemoteControlServer>();
+        remoteServer.PinChanged += pin => viewModel.SetRemotePin(pin);
+        if (remoteServer.CurrentPin is not null)
+        {
+            viewModel.SetRemotePin(remoteServer.CurrentPin);
+        }
 
         _updateManager = new AppUpdateManager(log);
         _updateManager.Start();
