@@ -3,6 +3,7 @@
 > 이 파일은 이 리포지토리에서 작업하는 Claude Code에게 **자동 적용되는 공유 규약**입니다.
 > 단일 진실 공급원(SoT)은 [`SilentStream_개발계획서.md`](./SilentStream_개발계획서.md) 이며,
 > Phase별 실행 방법은 [`docs/EXECUTION_GUIDE.md`](./docs/EXECUTION_GUIDE.md) 를 따릅니다.
+> 신규 기능(교시 VOD·폰 원격) 확장 계획은 [`SilentStream_확장계획서_교시VOD_폰원격제어.md`](./SilentStream_확장계획서_교시VOD_폰원격제어.md) 입니다.
 
 ## 프로젝트 한 줄 요약
 OBS 대체용 **완전 자동·비가시적 YouTube 송출 + 로컬 백업 녹화** 프로그램.

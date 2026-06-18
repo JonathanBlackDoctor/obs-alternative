@@ -332,11 +332,13 @@ Live ──(stop/shutdown)──► Stopping → Idle
 ---
 
 ## 10. 산출물 체크리스트 (Orchestrator용)
-- [ ] Phase 0 인터페이스 고정 & 빌드
-- [ ] Phase 1 Config/Log/단일인스턴스
-- [ ] Phase 2 캡처/오디오/인코딩/tee+녹화
-- [ ] Phase 3 YouTube OAuth/Live
-- [ ] Phase 4 9px 박스/단축키/제어 UI
-- [ ] Phase 5 자동시작/재시도/종료 처리
-- [ ] Phase 6 인스톨러/업데이트/E2E
-- [ ] 사용자 문서(설치·사용·문제해결) 작성
+- [x] Phase 0 인터페이스 고정 & 빌드 (WPF 앱 포함 Windows 빌드 검증, 2026-06-13)
+- [x] Phase 1 Config/Log/단일인스턴스 (DPAPI 암복호화 Windows 실검증)
+- [x] Phase 2 캡처/오디오/인코딩/tee+녹화 (캡처 2560×1440@75fps·시스템오디오·NVENC tee·RTMP차단독립 Windows 검증 / 마이크 믹싱은 입력장치 부재로 미검증)
+- [x] Phase 3 YouTube OAuth/Live (graceful 실패경로 검증, **실 Google 계정·채널 송출 검증 필요**)
+- [x] Phase 4 9px 박스/단축키/제어 UI (9px 박스 색상·제어창/녹화·설정 패널 렌더 **육안 검증 완료(2026-06-13)** + 로그뷰어 크래시 버그 수정(커밋 6acf46f). 전역 단축키 등록·단일 인스턴스 토글 검증)
+- [x] Phase 5 자동시작/재시도/종료 처리 (자동시작 레지스트리·warmup·백오프·**녹화 독립 시작**(§4.1 갭 수정)·mp4 정상 마감 검증, **재부팅 E2E 필요**)
+- [x] Phase 6 인스톨러/업데이트/E2E (인스톨러 `.exe` 빌드 검증, **클린설치/재부팅 E2E·Squirrel 피드 URL 필요**)
+- [x] 사용자 문서(설치·사용·문제해결) 작성 (`docs/USER_GUIDE.md`)
+
+> **확장 계획(별도 문서)**: 교시 자동 분할 VOD 업로드 + 스마트폰 원격 제어는 [`SilentStream_확장계획서_교시VOD_폰원격제어.md`](./SilentStream_확장계획서_교시VOD_폰원격제어.md) 참조 (확장 Phase E1~E5, 2026-06-18 합의).
