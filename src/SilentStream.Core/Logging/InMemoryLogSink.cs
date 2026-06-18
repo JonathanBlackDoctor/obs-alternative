@@ -21,7 +21,15 @@ public static class InMemoryLogSink
         while (Lines.Count > Capacity && Lines.TryDequeue(out _))
         {
         }
-        LineAdded?.Invoke(line);
+        try
+        {
+            LineAdded?.Invoke(line);
+        }
+        catch
+        {
+            // A log-viewer subscriber must never break logging — nor the business-logic
+            // thread that emitted the line. Logging is a side effect, not a dependency.
+        }
     }
 
     public static IReadOnlyList<string> Snapshot() => Lines.ToArray();

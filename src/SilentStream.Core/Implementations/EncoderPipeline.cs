@@ -28,6 +28,8 @@ public sealed class EncoderPipeline : IEncoderPipeline
     private NamedPipeServerStream? _audioPipe;
     private Channel<ReadOnlyMemory<byte>>? _videoChannel;
     private Task? _videoWriterTask;
+    private Channel<byte[]>? _audioChannel;
+    private Task? _audioWriterTask;
     private CancellationTokenSource? _sessionCts;
 
     public EncoderPipeline(
@@ -117,11 +119,22 @@ public sealed class EncoderPipeline : IEncoderPipeline
             SingleReader = true
         });
 
+        // Audio writes go through a single task: NamedPipeServerStream does not support
+        // concurrent overlapped WriteAsync calls. Firing one write per SamplesAvailable event
+        // (async void) overlaps them as soon as ffmpeg stops draining the pipe (e.g. after an
+        // RTMP slave failure stalls the tee), which corrupts the overlapped-I/O state and
+        // crashes the process with c0000005. One reader, drop-oldest under backpressure.
+        _audioChannel = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(32)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true
+        });
+
         _capture.FrameCaptured += OnFrameCaptured;
         _audioMixer.SamplesAvailable += OnSamplesAvailable;
 
         _videoWriterTask = PumpVideoAsync(_process.StandardInput.BaseStream, sessionToken);
-        _ = WaitForAudioConnectionAsync(sessionToken);
+        _audioWriterTask = PumpAudioAsync(sessionToken);
     }
 
     public async Task StopAsync()
@@ -130,6 +143,7 @@ public sealed class EncoderPipeline : IEncoderPipeline
         _audioMixer.SamplesAvailable -= OnSamplesAvailable;
         _sessionCts?.Cancel();
         _videoChannel?.Writer.TryComplete();
+        _audioChannel?.Writer.TryComplete();
 
         var process = _process;
         if (process is null)
@@ -142,6 +156,10 @@ public sealed class EncoderPipeline : IEncoderPipeline
             if (_videoWriterTask is not null)
             {
                 await _videoWriterTask.ConfigureAwait(false);
+            }
+            if (_audioWriterTask is not null)
+            {
+                await _audioWriterTask.ConfigureAwait(false);
             }
         }
         catch (Exception ex) when (ex is OperationCanceledException or IOException)
@@ -189,22 +207,9 @@ public sealed class EncoderPipeline : IEncoderPipeline
     private void OnFrameCaptured(object? sender, VideoFrame frame) =>
         _videoChannel?.Writer.TryWrite(frame.Data);
 
-    private async void OnSamplesAvailable(object? sender, AudioBuffer buffer)
-    {
-        var pipe = _audioPipe;
-        if (pipe is not { IsConnected: true })
-        {
-            return;
-        }
-        try
-        {
-            await pipe.WriteAsync(buffer.Pcm).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
-        {
-            _log.Debug($"오디오 파이프 쓰기 실패: {ex.Message}");
-        }
-    }
+    private void OnSamplesAvailable(object? sender, AudioBuffer buffer) =>
+        // Copy off the mixer's reused PCM buffer; the single PumpAudioAsync task does the write.
+        _audioChannel?.Writer.TryWrite(buffer.Pcm.ToArray());
 
     private async Task PumpVideoAsync(Stream stdin, CancellationToken ct)
     {
@@ -221,15 +226,27 @@ public sealed class EncoderPipeline : IEncoderPipeline
         }
     }
 
-    private async Task WaitForAudioConnectionAsync(CancellationToken ct)
+    private async Task PumpAudioAsync(CancellationToken ct)
     {
+        var pipe = _audioPipe;
+        if (pipe is null)
+        {
+            return;
+        }
         try
         {
-            await _audioPipe!.WaitForConnectionAsync(ct).ConfigureAwait(false);
+            await pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
             _log.Debug("FFmpeg가 오디오 파이프에 연결되었습니다.");
+
+            // Single-threaded drain: exactly one outstanding pipe write at a time.
+            await foreach (var chunk in _audioChannel!.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+            {
+                await pipe.WriteAsync(chunk, ct).ConfigureAwait(false);
+            }
         }
         catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException)
         {
+            // Session ending or ffmpeg gone; the watchdog (Phase 5) handles restarts.
         }
     }
 

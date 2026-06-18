@@ -84,7 +84,13 @@ public static class FfmpegArgumentsBuilder
 
         if (hasRtmp && hasFile)
         {
-            args.Add("-f tee -map 0:v -map 1:a");
+            // use_fifo gives each slave its own thread + queue so a blocked/slow RTMP slave
+            // (e.g. YouTube not yet consuming the ingest) cannot starve the local mp4 slave —
+            // the tee otherwise writes slaves synchronously on one thread, so an RTMP stall
+            // freezes the recording at 0 bytes (plan §3.6/§4.1: recording independent of RTMP).
+            // drop_pkts_on_overflow keeps a backed-up RTMP from blocking; the mp4 slave drains
+            // to local disk far faster than the queue fills, so the recording isn't dropped.
+            args.Add("-f tee -use_fifo 1 -fifo_options queue_size=120:drop_pkts_on_overflow=1 -map 0:v -map 1:a");
             args.Add($"\"[f=flv:onfail=ignore]{spec.RtmpUrl}|" +
                      $"[f=mp4:movflags=+frag_keyframe+empty_moov]{TeeEscape(spec.RecordingFilePath!)}\"");
         }

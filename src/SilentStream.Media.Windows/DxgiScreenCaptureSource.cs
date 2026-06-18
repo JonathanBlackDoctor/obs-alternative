@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using SharpDX;
 using SharpDX.Direct3D;
 using SharpDX.Direct3D11;
@@ -18,6 +19,11 @@ namespace SilentStream.Media.Windows;
 public sealed class DxgiScreenCaptureSource : IScreenCaptureSource
 {
     private readonly ILogService _log;
+
+    // YouTube live ingest only accepts standard frame rates (1440p ≤ 60fps); a monitor's
+    // native refresh (e.g. 75Hz) is rejected and the connection is aborted (-10053). 30fps
+    // suits lecture/screen content and keeps the live + VOD uplink light (plan §4.3).
+    private const double MaxStreamFps = 30;
 
     private Device? _device;
     private OutputDuplication? _duplication;
@@ -87,7 +93,7 @@ public sealed class DxgiScreenCaptureSource : IScreenCaptureSource
         var bounds = output.Description.DesktopBounds;
         Width = bounds.Right - bounds.Left;
         Height = bounds.Bottom - bounds.Top;
-        Fps = GetPrimaryRefreshRate();
+        Fps = Math.Min(GetPrimaryRefreshRate(), MaxStreamFps);
 
         _duplication = output1.DuplicateOutput(_device);
         _stagingTexture = new Texture2D(_device, new Texture2DDescription
@@ -108,6 +114,14 @@ public sealed class DxgiScreenCaptureSource : IScreenCaptureSource
 
     private void CaptureLoop(CancellationToken ct)
     {
+        // Pace to a constant frame rate, emitting the last frame when the desktop is unchanged.
+        // Desktop Duplication only yields a frame on change, so a static screen would otherwise
+        // starve the encoder — the live stream stalls (YouTube aborts the ingest, -10053) and
+        // the tee back-pressures the local recording too. Constant CFR keeps both healthy.
+        var interval = TimeSpan.FromSeconds(1.0 / Math.Max(1, Fps));
+        var clock = Stopwatch.StartNew();
+        var next = interval;
+
         while (!ct.IsCancellationRequested)
         {
             try
@@ -133,6 +147,21 @@ public sealed class DxgiScreenCaptureSource : IScreenCaptureSource
                     Thread.Sleep(1000);
                 }
             }
+
+            // Hold the cadence; cancellable wait so stop is responsive.
+            var wait = next - clock.Elapsed;
+            if (wait > TimeSpan.Zero)
+            {
+                if (ct.WaitHandle.WaitOne(wait))
+                {
+                    break;
+                }
+                next += interval;
+            }
+            else
+            {
+                next = clock.Elapsed + interval; // fell behind on a heavy frame; resync without bursting
+            }
         }
     }
 
@@ -146,12 +175,14 @@ public sealed class DxgiScreenCaptureSource : IScreenCaptureSource
             return;
         }
 
-        var result = duplication.TryAcquireNextFrame(100, out var frameInfo, out Resource? desktopResource);
+        // Short poll: grab a new frame if one is ready, otherwise reuse the last (CFR fill).
+        var result = duplication.TryAcquireNextFrame(5, out var frameInfo, out Resource? desktopResource);
         if (result.Failure)
         {
             if (result.Code == SharpDX.DXGI.ResultCode.WaitTimeout.Result.Code)
             {
-                return; // No screen change within the wait window.
+                EmitFrame(); // no change → re-emit the last frame to keep a steady supply
+                return;
             }
             result.CheckError();
         }
@@ -176,7 +207,7 @@ public sealed class DxgiScreenCaptureSource : IScreenCaptureSource
             }
 
             DrawCursor();
-            FrameCaptured?.Invoke(this, new VideoFrame(Width, Height, DateTime.UtcNow, _frameBuffer));
+            EmitFrame();
         }
         finally
         {
@@ -184,6 +215,9 @@ public sealed class DxgiScreenCaptureSource : IScreenCaptureSource
             duplication.ReleaseFrame();
         }
     }
+
+    private void EmitFrame() =>
+        FrameCaptured?.Invoke(this, new VideoFrame(Width, Height, DateTime.UtcNow, _frameBuffer!));
 
     private void CopyToBuffer(DataBox map)
     {

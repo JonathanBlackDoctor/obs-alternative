@@ -71,7 +71,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 LogLines.Add(line);
             }
         }
-        InMemoryLogSink.LineAdded += line =>
+        // Marshal to the UI thread: appending raises CollectionChanged, whose handler in
+        // ControlWindow touches the ListBox's CollectionView (UI-thread affinity). Logging
+        // fires from background threads (capture/encoder/orchestrator), so doing this off
+        // the UI thread throws a cross-thread exception straight back into the *caller* —
+        // e.g. faulting StreamOrchestrator.StartAsync and silently killing auto-start.
+        InMemoryLogSink.LineAdded += line => OnUi(() =>
         {
             lock (_logSync)
             {
@@ -81,7 +86,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
                     LogLines.RemoveAt(0);
                 }
             }
-        };
+        });
 
         RefreshDevices();
         RefreshRecordingStatus();
