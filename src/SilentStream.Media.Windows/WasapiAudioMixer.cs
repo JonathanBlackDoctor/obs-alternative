@@ -3,6 +3,7 @@ using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 using SilentStream.Core.Contracts;
+using SilentStream.Core.Media;
 using SilentStream.Core.Models;
 
 namespace SilentStream.Media.Windows;
@@ -65,9 +66,55 @@ public sealed class WasapiAudioMixer : IAudioMixer
     public IReadOnlyList<AudioDeviceInfo> GetMicrophoneDevices()
     {
         using var enumerator = new MMDeviceEnumerator();
+        // Real microphones first, loopback monitors (Stereo Mix) last and flagged, so the UI never
+        // surfaces a loopback as the obvious default and the mic leg can't silently duplicate system audio.
         return enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active)
-            .Select(d => new AudioDeviceInfo(d.ID, d.FriendlyName))
+            .Select(d => new AudioDeviceInfo(d.ID, d.FriendlyName, AudioDeviceClassifier.IsLoopbackName(d.FriendlyName)))
+            .OrderBy(d => d.IsLoopback)
             .ToList();
+    }
+
+    /// <summary>
+    /// Resolves the capture device for a microphone source whose DeviceId is unset. Prefers the
+    /// Windows Communications default, but only if it is a real mic — if the default is a loopback
+    /// monitor (Stereo Mix), falls back to the first real microphone so the mic leg never just
+    /// mirrors system audio (1st field-test S9 root cause). Returns null if nothing usable exists.
+    /// </summary>
+    private MMDevice? PickDefaultMicDevice(MMDeviceEnumerator enumerator)
+    {
+        MMDevice? communications = null;
+        try
+        {
+            communications = enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
+        }
+        catch
+        {
+            // No default capture endpoint; fall through to enumeration.
+        }
+
+        if (communications is not null && !AudioDeviceClassifier.IsLoopbackName(communications.FriendlyName))
+        {
+            return communications;
+        }
+
+        var realMic = enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active)
+            .FirstOrDefault(d => !AudioDeviceClassifier.IsLoopbackName(d.FriendlyName));
+        if (realMic is not null)
+        {
+            if (communications is not null)
+            {
+                _log.Warn($"기본 녹음 장치가 루프백('{communications.FriendlyName}')이라 실제 마이크 " +
+                          $"'{realMic.FriendlyName}'를 사용합니다.");
+            }
+            return realMic;
+        }
+
+        if (communications is not null)
+        {
+            _log.Warn($"실제 마이크를 찾지 못해 기본 녹음 장치('{communications.FriendlyName}')를 사용합니다 " +
+                      "— 시스템 소리와 중복될 수 있습니다.");
+        }
+        return communications;
     }
 
     // ---- source configuration ----
@@ -108,7 +155,7 @@ public sealed class WasapiAudioMixer : IAudioMixer
                         continue;
                     }
                     chain.Settings = s;
-                    chain.Gate.Enabled = s.GateEnabled;
+                    chain.Gate.Enabled = s.Kind == AudioSourceKind.Microphone && s.GateEnabled;
                     chain.Gate.ThresholdDb = s.GateThresholdDb;
                     chain.ApplyVolume();
                 }
@@ -214,7 +261,9 @@ public sealed class WasapiAudioMixer : IAudioMixer
         var slot = new SwappableSampleProvider(MixFormat);
         var gate = new NoiseGateSampleProvider(slot)
         {
-            Enabled = settings.GateEnabled,
+            // Gate only microphone legs. Gating the system loopback would chop off quiet desktop
+            // audio (and could silence everything if mis-enabled) — never what the user wants.
+            Enabled = settings.Kind == AudioSourceKind.Microphone && settings.GateEnabled,
             ThresholdDb = settings.GateThresholdDb
         };
         var volume = new VolumeSampleProvider(gate);
@@ -236,8 +285,12 @@ public sealed class WasapiAudioMixer : IAudioMixer
             {
                 using var enumerator = new MMDeviceEnumerator();
                 var device = string.IsNullOrEmpty(chain.Settings.DeviceId)
-                    ? enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications)
+                    ? PickDefaultMicDevice(enumerator)
                     : enumerator.GetDevice(chain.Settings.DeviceId);
+                if (device is null)
+                {
+                    throw new InvalidOperationException("사용 가능한 마이크 캡처 장치가 없습니다.");
+                }
                 capture = new WasapiCapture(device);
             }
 

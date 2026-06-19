@@ -32,7 +32,12 @@ public sealed record AudioBuffer(
 /// </summary>
 /// <param name="Id">Stable device identifier persisted in config.</param>
 /// <param name="Name">Human-readable device name shown in the UI.</param>
-public sealed record AudioDeviceInfo(string Id, string Name);
+/// <param name="IsLoopback">
+/// True for a system-output loopback masquerading as a capture device (e.g. "스테레오 믹스" /
+/// "Stereo Mix" / "What U Hear"). Such a device must not be auto-selected as the microphone, or
+/// the mic leg just duplicates system audio and the real mic is never captured (field-test bug).
+/// </param>
+public sealed record AudioDeviceInfo(string Id, string Name, bool IsLoopback = false);
 
 /// <summary>Kind of an audio source in the mixer.</summary>
 public enum AudioSourceKind

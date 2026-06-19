@@ -138,6 +138,31 @@ public class AudioConfigMapperTests
     }
 }
 
+public class AudioDeviceClassifierTests
+{
+    [Theory]
+    [InlineData("스테레오 믹스 (Realtek(R) Audio)")]
+    [InlineData("Stereo Mix (Realtek High Definition Audio)")]
+    [InlineData("What U Hear (Sound Blaster)")]
+    [InlineData("Wave Out Mix")]
+    [InlineData("CABLE Output (VB-Audio Loopback)")]
+    public void Loopback_monitors_are_flagged(string name)
+    {
+        Assert.True(AudioDeviceClassifier.IsLoopbackName(name));
+    }
+
+    [Theory]
+    [InlineData("Microphone (USB Audio Device)")]
+    [InlineData("마이크(Realtek(R) Audio)")]
+    [InlineData("Headset Microphone")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void Real_microphones_are_not_flagged(string? name)
+    {
+        Assert.False(AudioDeviceClassifier.IsLoopbackName(name));
+    }
+}
+
 public class AudioMigrationTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("sstream-audio-").FullName;
