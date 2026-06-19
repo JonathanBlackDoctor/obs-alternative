@@ -29,6 +29,10 @@ public sealed class UploadQueue : IUploadQueue
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly int _maxPerDay;
     private readonly int _maxAttempts;
+    // Keep recent terminal jobs (phone visibility / manual retry) but prune older ones so
+    // upload_queue.json cannot grow without bound. Pending/Uploading jobs are never pruned.
+    private readonly int _maxCompletedRetained;
+    private readonly int _maxFailedRetained;
 
     private readonly object _gate = new();
     private QueueState? _state;
@@ -51,7 +55,9 @@ public sealed class UploadQueue : IUploadQueue
         Func<DateTime> now,
         Func<TimeSpan, CancellationToken, Task> delay,
         int maxPerDay,
-        int maxAttempts)
+        int maxAttempts,
+        int maxCompletedRetained = 50,
+        int maxFailedRetained = 20)
     {
         _uploadService = uploadService;
         _configStore = configStore;
@@ -61,6 +67,8 @@ public sealed class UploadQueue : IUploadQueue
         _delay = delay;
         _maxPerDay = maxPerDay;
         _maxAttempts = maxAttempts;
+        _maxCompletedRetained = maxCompletedRetained;
+        _maxFailedRetained = maxFailedRetained;
     }
 
     public void Enqueue(UploadJob job)
@@ -106,6 +114,7 @@ public sealed class UploadQueue : IUploadQueue
             {
                 PersistLocked();
             }
+            PruneTerminalLocked();
             _worker = WorkerAsync(ct);
         }
     }
@@ -153,6 +162,7 @@ public sealed class UploadQueue : IUploadQueue
             UpdateJob(job.Id, j => j with { Status = UploadJobStatus.Completed, VideoId = videoId });
             IncrementQuota();
             TryDeleteCutFile(job.FilePath);
+            PruneTerminal();
         }
         catch (QuotaExceededException)
         {
@@ -172,6 +182,7 @@ public sealed class UploadQueue : IUploadQueue
             {
                 UpdateJob(job.Id, j => j with { Status = UploadJobStatus.Failed, Attempts = attempts });
                 _log.Error($"{job.PeriodNumber}교시 업로드 {attempts}회 실패 — failed 처리(수동 재시도 필요).", ex);
+                PruneTerminal();
             }
             else
             {
@@ -201,6 +212,51 @@ public sealed class UploadQueue : IUploadQueue
                 state.Jobs[index] = transform(state.Jobs[index]);
                 PersistLocked();
             }
+        }
+    }
+
+    private void PruneTerminal()
+    {
+        lock (_gate)
+        {
+            PruneTerminalLocked();
+        }
+    }
+
+    /// <summary>
+    /// Caps retained terminal jobs (most-recent <see cref="MaxCompletedRetained"/> completed and
+    /// <see cref="MaxFailedRetained"/> failed) so the queue file stays bounded. Pending/Uploading
+    /// jobs are never removed — dropping one would lose an unsent 교시. Caller holds <see cref="_gate"/>.
+    /// </summary>
+    private void PruneTerminalLocked()
+    {
+        var jobs = LoadLocked().Jobs; // insertion order: oldest first
+        var completed = jobs.Where(j => j.Status == UploadJobStatus.Completed).ToList();
+        var failed = jobs.Where(j => j.Status == UploadJobStatus.Failed).ToList();
+        if (completed.Count <= _maxCompletedRetained && failed.Count <= _maxFailedRetained)
+        {
+            return;
+        }
+
+        var drop = new HashSet<string>(StringComparer.Ordinal);
+        if (completed.Count > _maxCompletedRetained)
+        {
+            foreach (var j in completed.Take(completed.Count - _maxCompletedRetained))
+            {
+                drop.Add(j.Id);
+            }
+        }
+        if (failed.Count > _maxFailedRetained)
+        {
+            foreach (var j in failed.Take(failed.Count - _maxFailedRetained))
+            {
+                drop.Add(j.Id);
+            }
+        }
+
+        if (jobs.RemoveAll(j => drop.Contains(j.Id)) > 0)
+        {
+            PersistLocked();
         }
     }
 
@@ -335,6 +391,7 @@ public sealed class UploadQueue : IUploadQueue
             if (File.Exists(path))
             {
                 File.Delete(path);
+                _log.Info($"업로드 완료 후 컷 파일 삭제: {Path.GetFileName(path)}");
             }
         }
         catch (IOException ex)

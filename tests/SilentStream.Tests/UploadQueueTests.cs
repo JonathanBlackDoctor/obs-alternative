@@ -132,6 +132,35 @@ public class UploadQueueTests : IDisposable
         Assert.True(_clock.QuotaPauses >= 1); // the cap forced at least one wait-for-reset
     }
 
+    [Fact]
+    public async Task Prune_caps_completed_jobs_and_never_drops_a_pending_one()
+    {
+        // Cap = 1 completed; 3 jobs with a daily cap of 2 so the 3rd stays pending while the queue
+        // parks at the quota reset. Prune must trim completed to 1 yet keep the pending 교시.
+        var clock = new VirtualClock(new DateTime(2026, 6, 15, 10, 0, 0), parkLargeWaits: true);
+        var uploader = new FakeUploader();
+        var queue = new UploadQueue(uploader, _configStore, new LogService(), _queueFile,
+            () => clock.Now, clock.Delay, maxPerDay: 2, maxAttempts: 5,
+            maxCompletedRetained: 1, maxFailedRetained: 0);
+        queue.Enqueue(MakeJob(1));
+        queue.Enqueue(MakeJob(2));
+        queue.Enqueue(MakeJob(3));
+
+        using var cts = new CancellationTokenSource();
+        queue.Start(cts.Token);
+
+        await WaitUntilAsync(() =>
+                queue.Snapshot().Count(j => j.Status == UploadJobStatus.Completed) == 1 &&
+                queue.Snapshot().Any(j => j.Status == UploadJobStatus.Pending),
+            TimeSpan.FromSeconds(5));
+        cts.Cancel();
+
+        var snap = queue.Snapshot();
+        Assert.Equal(1, snap.Count(j => j.Status == UploadJobStatus.Completed)); // capped to 1
+        Assert.Single(snap, j => j.Status == UploadJobStatus.Pending);           // pending preserved
+        Assert.DoesNotContain(snap, j => j.Id == "job-1");                       // oldest completed pruned
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;
