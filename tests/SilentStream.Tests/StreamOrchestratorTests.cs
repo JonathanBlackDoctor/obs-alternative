@@ -24,7 +24,7 @@ public class StreamOrchestratorTests : IDisposable
         _configStore.Save(config);
     }
 
-    private StreamOrchestrator CreateOrchestrator(TimeSpan? watchdog = null)
+    private StreamOrchestrator CreateOrchestrator(TimeSpan? watchdog = null, TimeSpan? retention = null)
     {
         var orchestrator = new StreamOrchestrator(
             _configStore, new LogService(), _youtube, _encoder, _recording, _capture, _mixer,
@@ -34,7 +34,8 @@ public class StreamOrchestratorTests : IDisposable
                 RetryBaseDelay = TimeSpan.FromMilliseconds(5),
                 RetryMaxDelay = TimeSpan.FromMilliseconds(40),
                 WatchdogInterval = watchdog ?? TimeSpan.FromMilliseconds(25),
-                RetentionInterval = TimeSpan.FromHours(1)
+                StallTimeout = TimeSpan.FromMilliseconds(200),
+                RetentionInterval = retention ?? TimeSpan.FromHours(1)
             });
         orchestrator.StateChanged += (_, s) => { lock (_states) { _states.Add(s); } };
         return orchestrator;
@@ -146,6 +147,38 @@ public class StreamOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task Watchdog_restarts_a_stalled_encoder_even_while_process_is_alive()
+    {
+        var orchestrator = CreateOrchestrator();
+        await orchestrator.StartAsync(CancellationToken.None);
+        Assert.Single(_encoder.StartCalls);
+
+        // Process stays alive (IsRunning == true) but stops emitting progress: a stalled feed.
+        _encoder.TimeSinceProgress = TimeSpan.FromMinutes(5);
+        await WaitUntilAsync(() => _encoder.StartCalls.Count >= 2, TimeSpan.FromSeconds(5));
+
+        Assert.True(_encoder.StartCalls.Count >= 2);
+        Assert.Equal(StreamState.Live, orchestrator.State);
+        await orchestrator.StopAsync();
+    }
+
+    [Fact]
+    public async Task Watchdog_survives_a_retention_sweep_fault_and_keeps_running()
+    {
+        // A throwing periodic sweep used to kill the supervisor task silently (→ ~2h idle in the
+        // field). The hardened loop must log and keep watching.
+        _recording.ThrowOnSweep = true;
+        var orchestrator = CreateOrchestrator(retention: TimeSpan.FromMilliseconds(20));
+
+        await orchestrator.StartAsync(CancellationToken.None);
+        await Task.Delay(150); // several sweep intervals, at least one of which throws
+
+        Assert.Equal(StreamState.Live, orchestrator.State);
+        Assert.True(_recording.RetentionRuns >= 2); // boot sweep + ≥1 periodic (throwing) sweep
+        await orchestrator.StopAsync();
+    }
+
+    [Fact]
     public async Task Disabled_recording_streams_without_a_file()
     {
         var config = _configStore.Load();
@@ -217,14 +250,19 @@ public class StreamOrchestratorTests : IDisposable
 
         public bool IsRunning => _running;
 
+        /// <summary>Settable so tests can simulate a stalled feed (process alive, no progress).</summary>
+        public TimeSpan TimeSinceProgress { get; set; } = TimeSpan.Zero;
+
 #pragma warning disable CS0067
         public event EventHandler<MetricsSnapshot>? MetricsUpdated;
+        public event EventHandler? UnexpectedExit;
 #pragma warning restore CS0067
 
         public Task StartAsync(EncoderStartOptions options, CancellationToken ct)
         {
             StartCalls.Add(options);
             _running = true;
+            TimeSinceProgress = TimeSpan.Zero; // a fresh start clears any prior stall
             return Task.CompletedTask;
         }
 
@@ -243,6 +281,7 @@ public class StreamOrchestratorTests : IDisposable
     private sealed class FakeRecording : IRecordingManager
     {
         public int RetentionRuns;
+        public bool ThrowOnSweep; // throws on periodic sweeps (not the boot sweep)
         private int _files;
 
         public string CreateSessionFilePath(DateTime sessionStartLocal) =>
@@ -253,6 +292,10 @@ public class StreamOrchestratorTests : IDisposable
         public Task EnforceRetentionAsync(CancellationToken ct)
         {
             RetentionRuns++;
+            if (ThrowOnSweep && RetentionRuns >= 2)
+            {
+                throw new IOException("simulated retention sweep failure");
+            }
             return Task.CompletedTask;
         }
     }

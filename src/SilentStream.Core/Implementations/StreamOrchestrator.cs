@@ -20,6 +20,13 @@ public sealed record StreamOrchestratorOptions
     /// <summary>Encoder watchdog poll interval (plan §4.4).</summary>
     public TimeSpan WatchdogInterval { get; init; } = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// Max time the encoder may run without emitting an ffmpeg progress line before the watchdog
+    /// treats the feed as stalled and rebuilds the pipeline (process alive but no longer streaming,
+    /// e.g. RTMP slave failure / pipe EOF). Must exceed the ffmpeg stats cadence.
+    /// </summary>
+    public TimeSpan StallTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
     /// <summary>Recording retention sweep interval (plan §3.6: 1시간 주기).</summary>
     public TimeSpan RetentionInterval { get; init; } = TimeSpan.FromHours(1);
 }
@@ -386,32 +393,33 @@ public sealed class StreamOrchestrator : IStreamOrchestrator
         var lastSweep = DateTime.UtcNow;
         while (!ct.IsCancellationRequested)
         {
-            await Task.Delay(_options.WatchdogInterval, ct).ConfigureAwait(false);
-
-            if (State == StreamState.Live && !_encoder.IsRunning)
+            // The whole body is guarded: an unhandled fault here must never silently kill the
+            // supervisor (a field session sat idle ~2h after exactly that). Only cancellation ends it.
+            try
             {
-                _log.Warn("인코더 프로세스 사망 감지 — 파이프라인을 재구성합니다.");
-                try
+                await Task.Delay(_options.WatchdogInterval, ct).ConfigureAwait(false);
+
+                if (State == StreamState.Live && (!_encoder.IsRunning ||
+                        _encoder.TimeSinceProgress > _options.StallTimeout))
                 {
+                    var reason = !_encoder.IsRunning ? "인코더 프로세스 사망" : "인코더 피드 정지(스톨)";
+                    _log.Warn($"{reason} 감지 — 파이프라인을 재구성합니다.");
                     await ConnectUntilLiveAsync(ct).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
-            }
 
-            if (DateTime.UtcNow - lastSweep >= _options.RetentionInterval)
-            {
-                lastSweep = DateTime.UtcNow;
-                try
+                if (DateTime.UtcNow - lastSweep >= _options.RetentionInterval)
                 {
+                    lastSweep = DateTime.UtcNow;
                     await _recording.EnforceRetentionAsync(ct).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    _log.Warn($"녹화 보존 정리 실패: {ex.Message}");
-                }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                _log.Error("워치독 루프 오류 — 감시를 계속합니다.", ex);
             }
         }
     }

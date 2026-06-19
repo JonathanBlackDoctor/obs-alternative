@@ -86,7 +86,10 @@ public sealed class YouTubeLiveService(
             ContentDetails = new LiveBroadcastContentDetails
             {
                 EnableAutoStart = true,
-                EnableAutoStop = true
+                // AutoStop OFF: a transient feed drop (RTMP slave failure / encoder restart) must not
+                // let YouTube complete the broadcast server-side mid-session. Our stall watchdog
+                // restarts the encoder onto the SAME broadcast; app shutdown completes it explicitly.
+                EnableAutoStop = false
             }
         };
         broadcast = await service.LiveBroadcasts
