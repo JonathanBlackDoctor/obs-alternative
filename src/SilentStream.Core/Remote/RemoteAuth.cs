@@ -29,11 +29,15 @@ public static class RemoteAuth
             return false;
         }
         var hash = HashToken(token);
-        return knownHashes.Any(h => FixedTimeEquals(h, hash));
+        return knownHashes.Any(h => ConstantTimeEquals(h, hash));
     }
 
-    private static bool FixedTimeEquals(string a, string b) =>
-        a.Length == b.Length &&
+    /// <summary>
+    /// Constant-time string comparison. Used for the pairing PIN and token-hash checks so an
+    /// attacker can't recover them character-by-character via response timing.
+    /// </summary>
+    public static bool ConstantTimeEquals(string? a, string? b) =>
+        a is not null && b is not null && a.Length == b.Length &&
         CryptographicOperations.FixedTimeEquals(
             Encoding.ASCII.GetBytes(a), Encoding.ASCII.GetBytes(b));
 }

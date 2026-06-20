@@ -58,7 +58,9 @@ public sealed class RemoteControlServer : IRemoteControlServer
     private readonly string _html;
 
     private readonly CloudflaredManager _cloudflared;
+    private readonly PairingThrottle _pairThrottle = new();
     private WebApplication? _app;
+    private int? _firewallPort; // the port a runtime firewall rule was opened for (LAN mode), to remove on stop
     private MetricsSnapshot _lastMetrics = MetricsSnapshot.Empty;
     private int _levelTick;
 
@@ -122,8 +124,7 @@ public sealed class RemoteControlServer : IRemoteControlServer
             TryConfigureFirewall(port);
         }
 
-        CurrentPin = RemoteAuth.NewPin();
-        PinChanged?.Invoke(CurrentPin);
+        RotatePin();
 
         var url = $"http://{bindIp}:{port}";
         var displayHost = mode == RemoteBindMode.Lan ? FirstLanIpv4() ?? bindIp : bindIp;
@@ -205,6 +206,7 @@ public sealed class RemoteControlServer : IRemoteControlServer
 
         await _cloudflared.StopAsync().ConfigureAwait(false);
         CurrentPublicUrl = null;
+        RemoveFirewall(); // B4: don't leave the inbound port open after the app stops
 
         try
         {
@@ -216,6 +218,32 @@ public sealed class RemoteControlServer : IRemoteControlServer
         }
         await app.DisposeAsync().ConfigureAwait(false);
         _log.Info("원격 제어 서버를 정지했습니다.");
+    }
+
+    /// <summary>Generates a fresh pairing PIN and notifies the control window.</summary>
+    private void RotatePin()
+    {
+        CurrentPin = RemoteAuth.NewPin();
+        PinChanged?.Invoke(CurrentPin);
+    }
+
+    /// <summary>Removes the runtime inbound firewall rule this server added (LAN mode), if any.</summary>
+    private void RemoveFirewall()
+    {
+        if (_firewallPort is not int port)
+        {
+            return;
+        }
+        _firewallPort = null;
+        try
+        {
+            RunNetsh($"advfirewall firewall delete rule name=\"SilentStream Remote {port}\"");
+            _log.Info($"원격 방화벽 인바운드 규칙을 제거했습니다(TCP {port}).");
+        }
+        catch (Exception ex)
+        {
+            _log.Debug($"방화벽 규칙 제거 실패(다음 시작 시 재정리됨): {ex.Message}");
+        }
     }
 
     // ---- auth ----
@@ -264,14 +292,32 @@ public sealed class RemoteControlServer : IRemoteControlServer
 
         app.MapPost("/api/pair", async ctx =>
         {
-            var body = await ReadJsonAsync<PairRequest>(ctx).ConfigureAwait(false);
-            if (body?.Pin is null || CurrentPin is null || body.Pin != CurrentPin)
+            // Brute-force guard (B3): the PIN is only 6 digits, so reject without checking once
+            // too many attempts have failed, and use a constant-time compare below.
+            if (_pairThrottle.IsLocked(out var retryAfter))
             {
+                ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                ctx.Response.Headers.RetryAfter =
+                    ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+                await ctx.Response.WriteAsJsonAsync(new { error = "잠시 후 다시 시도하세요." }).ConfigureAwait(false);
+                return;
+            }
+
+            var body = await ReadJsonAsync<PairRequest>(ctx).ConfigureAwait(false);
+            if (body?.Pin is null || CurrentPin is null || !RemoteAuth.ConstantTimeEquals(body.Pin, CurrentPin))
+            {
+                if (_pairThrottle.RecordFailure())
+                {
+                    // Rotate the PIN on lockout so any guesses an attacker made are discarded.
+                    RotatePin();
+                    _log.Warn("페어링 PIN 시도가 반복 실패해 일시적으로 잠그고 PIN을 회전했습니다(무차별 대입 방어).");
+                }
                 ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 await ctx.Response.WriteAsJsonAsync(new { error = "PIN이 올바르지 않습니다." }).ConfigureAwait(false);
                 return;
             }
 
+            _pairThrottle.RecordSuccess();
             var token = RemoteAuth.NewToken();
             // Atomic append so a just-paired token can't be clobbered by a concurrent config save.
             _configStore.Update(config => config.Remote.DeviceTokens.Add(RemoteAuth.HashToken(token)));
@@ -772,9 +818,15 @@ public sealed class RemoteControlServer : IRemoteControlServer
             RunNetsh($"advfirewall firewall delete rule name=\"{ruleName}\"");
             var exit = RunNetsh(
                 $"advfirewall firewall add rule name=\"{ruleName}\" dir=in action=allow protocol=TCP localport={port}");
-            _log.Info(exit == 0
-                ? $"Windows 방화벽 인바운드 규칙을 추가했습니다(TCP {port})."
-                : $"방화벽 규칙 추가 실패(관리자 권한 필요할 수 있음). 수동 허용: TCP {port}.");
+            if (exit == 0)
+            {
+                _firewallPort = port; // remember it so StopAsync can remove it (B4: no leaked rule)
+                _log.Info($"Windows 방화벽 인바운드 규칙을 추가했습니다(TCP {port}).");
+            }
+            else
+            {
+                _log.Info($"방화벽 규칙 추가 실패(관리자 권한 필요할 수 있음). 수동 허용: TCP {port}.");
+            }
         }
         catch (Exception ex)
         {
